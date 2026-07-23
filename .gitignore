@@ -1,0 +1,7 @@
+**/target/
+/.agents/
+/.build/
+.idea/
+.vscode/
+*.iml
+*.log

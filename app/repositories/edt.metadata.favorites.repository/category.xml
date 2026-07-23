@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<site>
+   <feature id="edt.metadata.favorites.feature">
+      <category name="edt.metadata.favorites.category"/>
+   </feature>
+   <category-def name="edt.metadata.favorites.category" label="EDT Metadata Favorites"/>
+</site>

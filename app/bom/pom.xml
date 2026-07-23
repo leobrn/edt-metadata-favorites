@@ -1,0 +1,140 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<project
+  xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd"
+  xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <modelVersion>4.0.0</modelVersion>
+
+  <groupId>edt.metadata.favorites</groupId>
+  <artifactId>bom</artifactId>
+  <version>1.2.0-SNAPSHOT</version>
+  <packaging>pom</packaging>
+
+  <name>BOM</name>
+
+  <prerequisites>
+    <maven>3.9.9</maven>
+  </prerequisites>
+
+  <properties>
+
+    <tycho.version>5.0.3</tycho.version>
+
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
+
+    <maven.compiler.source>17</maven.compiler.source>
+    <maven.compiler.target>17</maven.compiler.target>
+    <maven.compiler.release>17</maven.compiler.release>
+
+    <maven.build.timestamp.format>'v'yyyyMMdd-HHmm</maven.build.timestamp.format>
+    <qualifier>${maven.build.timestamp}</qualifier>
+
+    <p2repo.archive.skip>false</p2repo.archive.skip>
+  </properties>
+
+  <build>
+    <pluginManagement>
+      <plugins>
+        <plugin>
+          <groupId>org.eclipse.tycho</groupId>
+          <artifactId>target-platform-configuration</artifactId>
+          <version>${tycho.version}</version>
+          <configuration>
+            <executionEnvironment>JavaSE-17</executionEnvironment>
+            <target>
+              <artifact>
+                <groupId>edt.metadata.favorites</groupId>
+                <artifactId>default</artifactId>
+                <version>1.2.0-SNAPSHOT</version>
+              </artifact>
+            </target>
+            <dependency-resolution>
+              <extraRequirements>
+                <requirement>
+                  <type>eclipse-plugin</type>
+                  <id>org.apache.felix.scr</id>
+                  <versionRange>0.0.0</versionRange>
+                </requirement>
+                <requirement>
+                  <type>eclipse-plugin</type>
+                  <id>org.apache.aries.spifly.dynamic.bundle</id>
+                  <versionRange>0.0.0</versionRange>
+                </requirement>
+              </extraRequirements>
+            </dependency-resolution>
+            <environments>
+              <environment>
+                <os>win32</os>
+                <ws>win32</ws>
+                <arch>x86_64</arch>
+              </environment>
+              <environment>
+                <os>linux</os>
+                <ws>gtk</ws>
+                <arch>x86_64</arch>
+              </environment>
+              <environment>
+                <os>macosx</os>
+                <ws>cocoa</ws>
+                <arch>x86_64</arch>
+              </environment>
+            </environments>
+          </configuration>
+        </plugin>
+        <plugin>
+          <groupId>org.eclipse.tycho</groupId>
+          <artifactId>tycho-maven-plugin</artifactId>
+          <version>${tycho.version}</version>
+          <extensions>true</extensions>
+        </plugin>
+        <plugin>
+          <groupId>org.eclipse.tycho</groupId>
+          <artifactId>tycho-compiler-plugin</artifactId>
+          <version>${tycho.version}</version>
+          <configuration>
+            <encoding>UTF-8</encoding>
+            <useProjectSettings>true</useProjectSettings>
+          </configuration>
+        </plugin>
+        <plugin>
+          <groupId>org.eclipse.tycho</groupId>
+          <artifactId>tycho-packaging-plugin</artifactId>
+          <version>${tycho.version}</version>
+          <configuration>
+            <format>'v'yyyyMMddHHmm</format>
+          </configuration>
+        </plugin>
+        <plugin>
+          <groupId>org.eclipse.tycho</groupId>
+          <artifactId>tycho-p2-plugin</artifactId>
+          <version>${tycho.version}</version>
+        </plugin>
+        <plugin>
+          <groupId>org.eclipse.tycho</groupId>
+          <artifactId>tycho-p2-repository-plugin</artifactId>
+          <version>${tycho.version}</version>
+          <configuration>
+            <repositoryName>Repository</repositoryName>
+            <finalName>${project.artifactId}</finalName>
+            <skipArchive>${p2repo.archive.skip}</skipArchive>
+          </configuration>
+        </plugin>
+        <plugin>
+          <groupId>org.eclipse.tycho</groupId>
+          <artifactId>tycho-eclipse-plugin</artifactId>
+          <version>${tycho.version}</version>
+        </plugin>
+      </plugins>
+    </pluginManagement>
+
+    <plugins>
+      <plugin>
+        <groupId>org.eclipse.tycho</groupId>
+        <artifactId>tycho-maven-plugin</artifactId>
+        <extensions>true</extensions>
+      </plugin>
+    </plugins>
+  </build>
+
+</project>

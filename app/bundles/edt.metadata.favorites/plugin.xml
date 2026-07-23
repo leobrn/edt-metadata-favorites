@@ -1,0 +1,192 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<?eclipse version="3.4"?>
+<plugin>
+
+
+   <extension point="org.eclipse.ui.decorators">
+      <decorator
+            class="edt.metadata.favorites.PinDecorator"
+            id="edt.metadata.favorites.decorator"
+            label="%decorator.label"
+            lightweight="true"
+            state="true">
+         <enablement>
+            <or>
+               <objectClass name="org.eclipse.core.resources.IProject"/>
+               <objectClass name="com._1c.g5.v8.dt.metadata.mdclass.MdObject"/>
+            </or>
+         </enablement>
+      </decorator>
+   </extension>
+
+
+   <extension point="org.eclipse.ui.navigator.navigatorContent">
+      <commonFilter
+            class="edt.metadata.favorites.PinnedOnlyFilter"
+            id="edt.metadata.favorites.filter"
+            name="%filter.name"
+            description="%filter.description"
+            activeByDefault="false">
+      </commonFilter>
+   </extension>
+
+   <extension point="org.eclipse.ui.navigator.viewer">
+      <viewerContentBinding viewerId="com._1c.g5.v8.dt.ui2.navigator">
+         <includes>
+            <contentExtension pattern="edt.metadata.favorites.filter"/>
+         </includes>
+      </viewerContentBinding>
+   </extension>
+
+
+   <extension point="org.eclipse.ui.commands">
+      <category
+            id="edt.metadata.favorites.category"
+            name="%category.name">
+      </category>
+      <command
+            id="edt.metadata.favorites.toggleFilter"
+            categoryId="edt.metadata.favorites.category"
+            name="%toggleFilter.name"
+            description="%toggleFilter.description">
+      </command>
+      <command
+            id="edt.metadata.favorites.togglePin"
+            categoryId="edt.metadata.favorites.category"
+            name="%togglePin.name"
+            description="%togglePin.description">
+      </command>
+      <command
+            id="edt.metadata.favorites.toggleEditorPin"
+            categoryId="edt.metadata.favorites.category"
+            name="%editorTogglePin.name"
+            description="%editorTogglePin.description">
+      </command>
+      <command
+            id="edt.metadata.favorites.manageFavorites"
+            categoryId="edt.metadata.favorites.category"
+            name="%manageFavorites.name"
+            description="%manageFavorites.description">
+      </command>
+   </extension>
+
+
+   <extension point="org.eclipse.ui.handlers">
+      <handler
+            class="edt.metadata.favorites.ToggleFilterHandler"
+            commandId="edt.metadata.favorites.toggleFilter">
+
+         <activeWhen>
+            <with variable="activePartId">
+               <equals value="com._1c.g5.v8.dt.ui2.navigator"/>
+            </with>
+         </activeWhen>
+      </handler>
+      <handler
+            class="edt.metadata.favorites.PinToggleHandler"
+            commandId="edt.metadata.favorites.togglePin">
+          <activeWhen>
+             <or>
+                <with variable="activePartId">
+                   <equals value="com._1c.g5.v8.dt.ui2.navigator"/>
+                </with>
+                <with variable="activePart">
+                   <instanceof value="com._1c.g5.v8.dt.ui.editor.IDtEditor"/>
+                </with>
+             </or>
+          </activeWhen>
+      </handler>
+      <handler
+            class="edt.metadata.favorites.EditorPinToggleHandler"
+            commandId="edt.metadata.favorites.toggleEditorPin">
+         <activeWhen>
+            <with variable="activeEditor">
+               <instanceof value="com._1c.g5.v8.dt.ui.editor.IDtEditor"/>
+            </with>
+         </activeWhen>
+      </handler>
+      <handler
+            class="edt.metadata.favorites.ManageFavoritesHandler"
+            commandId="edt.metadata.favorites.manageFavorites">
+
+      </handler>
+   </extension>
+
+
+   <extension point="org.eclipse.ui.bindings">
+      <key
+            sequence="M1+M3+K"
+            commandId="edt.metadata.favorites.togglePin"
+            schemeId="org.eclipse.ui.defaultAcceleratorConfiguration"
+            contextId="org.eclipse.ui.contexts.window">
+      </key>
+      <key
+            sequence="M1+M3+F"
+            commandId="edt.metadata.favorites.manageFavorites"
+            schemeId="org.eclipse.ui.defaultAcceleratorConfiguration"
+            contextId="org.eclipse.ui.contexts.window">
+      </key>
+   </extension>
+
+
+
+   <extension point="org.eclipse.ui.menus">
+      <menuContribution locationURI="popup:org.eclipse.ui.popup.any?after=additions" allPopups="true">
+         <dynamic
+               class="edt.metadata.favorites.PinMenuContribution"
+               id="edt.metadata.favorites.menu">
+            <visibleWhen checkEnabled="false">
+               <with variable="activePartId">
+                  <equals value="com._1c.g5.v8.dt.ui2.navigator"/>
+               </with>
+            </visibleWhen>
+         </dynamic>
+      </menuContribution>
+   </extension>
+
+   <extension point="org.eclipse.ui.menus">
+      <menuContribution locationURI="toolbar:com._1c.g5.v8.dt.ui2.navigator">
+         <command
+               commandId="edt.metadata.favorites.toggleFilter"
+               tooltip="%toggleFilter.tooltip"
+               icon="icons/lock.png"
+               style="toggle">
+         </command>
+      </menuContribution>
+   </extension>
+
+
+   <extension point="org.eclipse.ui.menus">
+      <menuContribution
+            allPopups="false"
+            locationURI="toolbar:org.eclipse.ui.main.toolbar?before=PerspectiveSpacer">
+         <toolbar
+               id="edt.metadata.favorites.editorToolbar"
+               label="%editorToolbar.label">
+            <command
+                  commandId="edt.metadata.favorites.toggleEditorPin"
+                  tooltip="%editorTogglePin.tooltip"
+                  icon="icons/pin.png"
+                  style="push">
+               <visibleWhen checkEnabled="false">
+                  <with variable="activeEditor">
+                     <instanceof value="com._1c.g5.v8.dt.ui.editor.IDtEditor"/>
+                  </with>
+               </visibleWhen>
+            </command>
+         </toolbar>
+      </menuContribution>
+   </extension>
+
+
+   <extension point="org.eclipse.ui.menus">
+      <menuContribution locationURI="menu:com._1c.g5.v8.dt.ui2.navigator">
+         <command
+               commandId="edt.metadata.favorites.manageFavorites"
+               label="%manageFavorites.menuLabel"
+               icon="icons/lock.png">
+         </command>
+      </menuContribution>
+   </extension>
+
+</plugin>
