@@ -6,27 +6,34 @@ package edt.metadata.favorites;
 import java.util.ArrayList;
 import java.util.IdentityHashMap;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 
 import org.eclipse.core.resources.IProject;
 import org.eclipse.core.resources.ResourcesPlugin;
+import org.eclipse.core.runtime.IProgressMonitor;
+import org.eclipse.core.runtime.IStatus;
+import org.eclipse.core.runtime.Status;
+import org.eclipse.core.runtime.jobs.Job;
+import org.eclipse.emf.ecore.EClass;
 import org.eclipse.jface.dialogs.Dialog;
 import org.eclipse.jface.dialogs.MessageDialog;
-import org.eclipse.jface.viewers.CheckStateChangedEvent;
-import org.eclipse.jface.viewers.CheckboxTreeViewer;
-import org.eclipse.jface.viewers.ICheckStateListener;
-import org.eclipse.jface.viewers.ICheckStateProvider;
 import org.eclipse.jface.viewers.ILabelProvider;
 import org.eclipse.jface.viewers.ITreeContentProvider;
 import org.eclipse.jface.viewers.LabelProvider;
 import org.eclipse.jface.viewers.StyledCellLabelProvider;
+import org.eclipse.jface.viewers.TreeViewer;
+import org.eclipse.jface.viewers.TreeViewerColumn;
 import org.eclipse.jface.viewers.Viewer;
 import org.eclipse.jface.viewers.ViewerCell;
 import org.eclipse.jface.viewers.ViewerFilter;
 import org.eclipse.swt.SWT;
 import org.eclipse.swt.custom.StyleRange;
+import org.eclipse.swt.events.ControlAdapter;
+import org.eclipse.swt.events.ControlEvent;
 import org.eclipse.swt.events.SelectionAdapter;
 import org.eclipse.swt.events.SelectionEvent;
 import org.eclipse.swt.graphics.Image;
@@ -40,6 +47,9 @@ import org.eclipse.swt.widgets.Control;
 import org.eclipse.swt.widgets.Label;
 import org.eclipse.swt.widgets.Shell;
 import org.eclipse.swt.widgets.Text;
+import org.eclipse.swt.widgets.Tree;
+import org.eclipse.swt.widgets.TreeItem;
+import org.eclipse.ui.PlatformUI;
 import org.eclipse.ui.plugin.AbstractUIPlugin;
 import org.eclipse.ui.navigator.INavigatorContentService;
 import org.eclipse.ui.navigator.NavigatorContentServiceFactory;
@@ -53,10 +63,11 @@ public class FavoritesManagementDialog extends Dialog
 {
     private static final String NAVIGATOR_ID = "com._1c.g5.v8.dt.ui2.navigator";
 
-    private static final int MIN_SEARCH_PATTERN_LENGTH = 2;
+    private static final int MIN_SEARCH_PATTERN_LENGTH = 3;
 
-    private static final int MAX_AUTO_EXPANDED_SEARCH_RESULTS = 300;
+    private static final int SEARCH_DELAY_MS = 250;
 
+    private static final Object[] NO_EXPANDED_ELEMENTS = new Object[0];
 
     private static final String NO_CONFIGURATION_MESSAGE =
         "Не удалось получить конфигурацию этого проекта - возможно, это не проект 1С:EDT.";
@@ -70,22 +81,35 @@ public class FavoritesManagementDialog extends Dialog
 
     private final Map<String, Map<String, PendingChange>> pendingByProject = new LinkedHashMap<>();
 
+    private final Map<String, Set<String>> originallyCheckedByProject = new LinkedHashMap<>();
+
+    private final Map<String, Set<String>> checkedByProject = new LinkedHashMap<>();
+
+    private final Map<String, TreeBuildResult> treeByProject = new LinkedHashMap<>();
+
     private Combo projectCombo;
 
     private Text searchText;
 
-
     private int searchGeneration;
 
+    private Job searchJob;
+
+    private Runnable pendingSearch;
 
     private boolean searchActive;
 
     private Label statusLabel;
 
-    private CheckboxTreeViewer treeViewer;
+    private String projectStatusMessage = "";
+
+    private TreeViewer treeViewer;
 
     private final TreeVisibilityFilter visibilityFilter = new TreeVisibilityFilter();
 
+    private FavoriteTreeLabelProvider favoriteTreeLabelProvider;
+
+    private final Map<EClass, Image> imageByClass = new IdentityHashMap<>();
 
     private Image titleImage;
 
@@ -184,13 +208,37 @@ public class FavoritesManagementDialog extends Dialog
                 }
             }
         });
-        searchText.addModifyListener(e -> {
-            int generation = ++searchGeneration;
-            String pattern = searchText.getText();
-            searchText.getDisplay().timerExec(150, () -> applySearch(generation, pattern));
-        });
+        searchText.addModifyListener(e -> scheduleSearch(searchText.getText()));
     }
 
+    private void scheduleSearch(String pattern)
+    {
+        cancelPendingSearch();
+        int generation = ++searchGeneration;
+        pendingSearch = new Runnable()
+        {
+            @Override
+            public void run()
+            {
+                if (pendingSearch != this)
+                {
+                    return;
+                }
+                pendingSearch = null;
+                applySearch(generation, pattern);
+            }
+        };
+        searchText.getDisplay().timerExec(SEARCH_DELAY_MS, pendingSearch);
+    }
+
+    private void cancelPendingSearch()
+    {
+        if (pendingSearch != null && searchText != null && !searchText.isDisposed())
+        {
+            searchText.getDisplay().timerExec(-1, pendingSearch);
+        }
+        pendingSearch = null;
+    }
 
     private void applySearch(int generation, String pattern)
     {
@@ -199,76 +247,145 @@ public class FavoritesManagementDialog extends Dialog
         {
             return;
         }
-        String effectivePattern = pattern.trim().length() >= MIN_SEARCH_PATTERN_LENGTH ? pattern : "";
+        String normalizedPattern = pattern == null ? "" : pattern.trim().toLowerCase(Locale.ROOT);
+        String effectivePattern =
+            normalizedPattern.length() >= MIN_SEARCH_PATTERN_LENGTH ? normalizedPattern : "";
         boolean hasPattern = !effectivePattern.isEmpty();
         if (!hasPattern && !searchActive)
         {
+            showSearchStatus(normalizedPattern);
             return;
         }
+
+        cancelSearchJob();
+        searchActive = hasPattern;
+        if (!hasPattern)
+        {
+            visibilityFilter.clearSearch();
+            setSearchHighlighting(false);
+            treeViewer.getControl().setRedraw(false);
+            try
+            {
+                treeViewer.refresh(true);
+                if (visibilityFilter.isOnlySelected() && shouldAutoExpandSelected())
+                {
+                    setExpandedMatchingElements();
+                }
+                else
+                {
+                    treeViewer.setExpandedElements(NO_EXPANDED_ELEMENTS);
+                }
+            }
+            finally
+            {
+                treeViewer.getControl().setRedraw(true);
+            }
+            showSearchStatus(normalizedPattern);
+            return;
+        }
+
+        List<FavoriteTreeNode> roots = currentRoots;
+        String projectName = currentProject;
+        boolean onlySelected = visibilityFilter.isOnlySelected();
+        Set<String> selectedUuids =
+            onlySelected ? Set.copyOf(checkedUuids(projectName)) : Set.of();
+        var display = searchText.getDisplay();
+        searchJob = new Job("Поиск в дереве избранного")
+        {
+            @Override
+            protected IStatus run(IProgressMonitor monitor)
+            {
+                FavoriteTreeSearch.Result result = FavoriteTreeSearch.compute(roots, effectivePattern,
+                    onlySelected, selectedUuids, monitor::isCanceled);
+                if (result == null || monitor.isCanceled())
+                {
+                    return Status.CANCEL_STATUS;
+                }
+                if (display.isDisposed())
+                {
+                    return Status.CANCEL_STATUS;
+                }
+                display.asyncExec(
+                    () -> applySearchResult(generation, projectName, roots, effectivePattern, result));
+                return Status.OK_STATUS;
+            }
+        };
+        searchJob.setSystem(true);
+        searchJob.schedule();
+    }
+
+    private void applySearchResult(int generation, String projectName, List<FavoriteTreeNode> roots,
+        String pattern, FavoriteTreeSearch.Result result)
+    {
+        if (generation != searchGeneration || !projectName.equals(currentProject)
+            || roots != currentRoots || treeViewer == null || treeViewer.getControl().isDisposed())
+        {
+            return;
+        }
+        searchJob = null;
+        visibilityFilter.applySearch(pattern, result);
+        setSearchHighlighting(true);
         treeViewer.getControl().setRedraw(false);
         try
         {
-            searchActive = hasPattern;
-            visibilityFilter.setPattern(effectivePattern);
-            if (hasPattern)
+            treeViewer.refresh(true);
+            if (result.matchingObjects() <= FavoriteUiLimits.MAX_AUTO_EXPANDED_OBJECTS)
             {
-                treeViewer.collapseAll();
-                treeViewer.refresh();
-                if (matchingObjectCount() <= MAX_AUTO_EXPANDED_SEARCH_RESULTS)
-                {
-                    currentRoots.forEach(this::expandSearchMatches);
-                }
+                setExpandedMatchingElements();
             }
             else
             {
-                treeViewer.setInput(currentRoots);
-                if (visibilityFilter.isOnlySelected())
-                {
-                    currentRoots.forEach(this::expandMatchingBranches);
-                }
+                treeViewer.setExpandedElements(NO_EXPANDED_ELEMENTS);
             }
         }
         finally
         {
             treeViewer.getControl().setRedraw(true);
         }
+        setStatusMessage("Найдено объектов: " + result.matchingObjects());
     }
 
-    private int matchingObjectCount()
+    private void cancelSearchJob()
     {
-        return currentRoots.stream().mapToInt(this::matchingObjectCount).sum();
-    }
-
-    private int matchingObjectCount(FavoriteTreeNode node)
-    {
-        int count = visibilityFilter.labelMatches(node) ? 1 : 0;
-        for (FavoriteTreeNode child : node.children)
+        if (searchJob != null)
         {
-            count += matchingObjectCount(child);
+            searchJob.cancel();
+            searchJob = null;
         }
-        return count;
     }
 
-    private void expandMatchingBranches(FavoriteTreeNode node)
+    private void showSearchStatus(String normalizedPattern)
     {
-        if (node.children.isEmpty() || !visibilityFilter.matchesSubtree(node))
+        if (!normalizedPattern.isEmpty() && normalizedPattern.length() < MIN_SEARCH_PATTERN_LENGTH)
+        {
+            setStatusMessage("Введите не менее " + MIN_SEARCH_PATTERN_LENGTH + " символов для поиска.");
+        }
+        else
+        {
+            setStatusMessage(projectStatusMessage);
+        }
+    }
+
+    private void setExpandedMatchingElements()
+    {
+        List<FavoriteTreeNode> expanded = new ArrayList<>();
+        currentRoots.forEach(node -> collectExpandedMatchingElements(node, expanded));
+        treeViewer.setExpandedElements(expanded.toArray());
+    }
+
+    private void collectExpandedMatchingElements(FavoriteTreeNode node,
+        List<FavoriteTreeNode> expanded)
+    {
+        boolean hasVisibleChildren =
+            node.children.stream().anyMatch(visibilityFilter::matchesSubtree);
+        if (!hasVisibleChildren)
         {
             return;
         }
-        treeViewer.setExpandedState(node, true);
-        node.children.forEach(this::expandMatchingBranches);
-    }
-
-
-    private void expandSearchMatches(FavoriteTreeNode node)
-    {
-        if (node.children.isEmpty()
-            || node.children.stream().noneMatch(visibilityFilter::labelMatchesSubtree))
-        {
-            return;
-        }
-        treeViewer.setExpandedState(node, true);
-        node.children.forEach(this::expandSearchMatches);
+        expanded.add(node);
+        node.children.stream()
+            .filter(visibilityFilter::matchesSubtree)
+            .forEach(child -> collectExpandedMatchingElements(child, expanded));
     }
 
 
@@ -287,10 +404,13 @@ public class FavoritesManagementDialog extends Dialog
             public void widgetSelected(SelectionEvent e)
             {
                 visibilityFilter.setOnlySelected(onlySelectedButton.getSelection());
-                treeViewer.refresh();
-                if (onlySelectedButton.getSelection())
+                if (searchActive)
                 {
-                    currentRoots.forEach(FavoritesManagementDialog.this::expandMatchingBranches);
+                    restartSearch();
+                }
+                else
+                {
+                    refreshSelectedVisibility();
                 }
             }
         });
@@ -329,60 +449,62 @@ public class FavoritesManagementDialog extends Dialog
 
     private void createTree(Composite parent)
     {
-        treeViewer = new CheckboxTreeViewer(parent, SWT.BORDER);
+        treeViewer = new TreeViewer(parent, SWT.BORDER | SWT.FULL_SELECTION | SWT.CHECK);
+        treeViewer.setUseHashlookup(true);
+        Tree tree = treeViewer.getTree();
+        tree.setHeaderVisible(true);
         GridData data = new GridData(SWT.FILL, SWT.FILL, true, true);
         data.heightHint = 260;
         treeViewer.getControl().setLayoutData(data);
         treeViewer.setContentProvider(new FavoriteTreeContentProvider());
         navigatorLabelProvider = createNavigatorLabelProvider();
-        treeViewer.setLabelProvider(new FavoriteTreeLabelProvider(navigatorLabelProvider));
+
+        TreeViewerColumn nameColumn = new TreeViewerColumn(treeViewer, SWT.NONE);
+        nameColumn.getColumn().setText("Объект метаданных");
+        nameColumn.getColumn().setWidth(390);
+        favoriteTreeLabelProvider = new FavoriteTreeLabelProvider(navigatorLabelProvider);
+        favoriteTreeLabelProvider.setOwnerDrawEnabled(false);
+        nameColumn.setLabelProvider(favoriteTreeLabelProvider);
+
         treeViewer.addFilter(visibilityFilter);
-        treeViewer.setCheckStateProvider(new ICheckStateProvider()
+        Runnable resizeColumns =
+            () -> nameColumn.getColumn().setWidth(Math.max(220, tree.getClientArea().width));
+        tree.addControlListener(new ControlAdapter()
         {
             @Override
-            public boolean isChecked(Object element)
+            public void controlResized(ControlEvent e)
             {
-                if (!(element instanceof FavoriteTreeNode node))
-                {
-                    return false;
-                }
-                if (node.isObject())
-                {
-                    return effectiveChecked(node);
-                }
-                return checkSummary(node).checked() > 0;
-            }
-
-            @Override
-            public boolean isGrayed(Object element)
-            {
-                if (!(element instanceof FavoriteTreeNode node) || !node.isGroup())
-                {
-                    return false;
-                }
-                CheckSummary summary = checkSummary(node);
-                return summary.checked() > 0 && summary.checked() < summary.total();
+                resizeColumns.run();
             }
         });
-        treeViewer.addCheckStateListener(new ICheckStateListener()
-        {
-            @Override
-            public void checkStateChanged(CheckStateChangedEvent event)
+        tree.getDisplay().asyncExec(() -> {
+            if (!tree.isDisposed())
             {
-                if (!(event.getElement() instanceof FavoriteTreeNode node))
-                {
-                    return;
-                }
-                if (node.isGroup())
-                {
-                    node.forEachObject(object -> recordChange(object, event.getChecked()));
-                }
-                else
-                {
-                    recordChange(node, event.getChecked());
-                }
-                invalidateViewCaches();
-                treeViewer.refresh();
+                resizeColumns.run();
+            }
+        });
+
+        tree.addListener(SWT.Selection, event -> {
+            if (event.detail != SWT.CHECK || !(event.item instanceof TreeItem item))
+            {
+                return;
+            }
+            if (item.getData() instanceof FavoriteTreeNode node)
+            {
+                toggleFavorite(node);
+            }
+        });
+
+        tree.addListener(SWT.KeyDown, event -> {
+            if (event.character != ' ')
+            {
+                return;
+            }
+            Object selected = treeViewer.getStructuredSelection().getFirstElement();
+            if (selected instanceof FavoriteTreeNode node)
+            {
+                toggleFavorite(node);
+                event.doit = false;
             }
         });
     }
@@ -408,15 +530,195 @@ public class FavoritesManagementDialog extends Dialog
         }
     }
 
+    static FavoriteState favoriteState(int total, int checked)
+    {
+        if (total <= 0 || checked <= 0)
+        {
+            return FavoriteState.NONE;
+        }
+        return checked >= total ? FavoriteState.ALL : FavoriteState.PARTIAL;
+    }
+
+    private FavoriteState favoriteState(FavoriteTreeNode node)
+    {
+        if (node.isGroup())
+        {
+            CheckSummary summary = checkSummary(node);
+            return favoriteState(summary.total(), summary.checked());
+        }
+        return favoriteState(1, effectiveChecked(node) ? 1 : 0);
+    }
+
+    private void toggleFavorite(FavoriteTreeNode node)
+    {
+        boolean changed;
+        if (node.isGroup())
+        {
+            CheckSummary summary = checkSummary(node);
+            changed = summary.total() > 0
+                && setSubtreeChecked(node, summary.checked() < summary.total());
+        }
+        else
+        {
+            changed = recordChange(node, !effectiveChecked(node));
+        }
+        if (!changed)
+        {
+            treeViewer.update(node, null);
+            return;
+        }
+
+        updateCheckSummaries(node);
+        treeViewer.getControl().setRedraw(false);
+        try
+        {
+            if (node.isGroup())
+            {
+                updateVisibleFavoriteState(node);
+            }
+            else
+            {
+                treeViewer.update(node, null);
+            }
+            updateParentFavoriteStates(node);
+            refreshAfterFavoriteStateChange();
+        }
+        finally
+        {
+            treeViewer.getControl().setRedraw(true);
+        }
+    }
 
     private void setAllChecked(boolean checked)
     {
+        boolean changed = false;
         for (FavoriteTreeNode group : currentRoots)
         {
-            group.forEachObject(object -> recordChange(object, checked));
+            changed |= setSubtreeChecked(group, checked);
         }
-        invalidateViewCaches();
-        treeViewer.refresh();
+        if (!changed)
+        {
+            return;
+        }
+        treeViewer.getControl().setRedraw(false);
+        try
+        {
+            for (FavoriteTreeNode root : currentRoots)
+            {
+                updateVisibleFavoriteState(root);
+            }
+            refreshAfterFavoriteStateChange();
+        }
+        finally
+        {
+            treeViewer.getControl().setRedraw(true);
+        }
+    }
+
+    private boolean setSubtreeChecked(FavoriteTreeNode node, boolean checked)
+    {
+        boolean changed = node.isObject() && recordChange(node, checked);
+        for (FavoriteTreeNode child : node.children)
+        {
+            changed |= setSubtreeChecked(child, checked);
+        }
+        recomputeCheckSummary(node);
+        return changed;
+    }
+
+    private void updateCheckSummaries(FavoriteTreeNode node)
+    {
+        recomputeCheckSummary(node);
+        for (FavoriteTreeNode parent = node.parent; parent != null; parent = parent.parent)
+        {
+            recomputeCheckSummary(parent);
+        }
+    }
+
+    private CheckSummary recomputeCheckSummary(FavoriteTreeNode node)
+    {
+        int total = node.isObject() ? 1 : 0;
+        int checked = node.isObject() && effectiveChecked(node) ? 1 : 0;
+        for (FavoriteTreeNode child : node.children)
+        {
+            CheckSummary childSummary = checkSummary(child);
+            total += childSummary.total();
+            checked += childSummary.checked();
+        }
+        CheckSummary result = new CheckSummary(total, checked);
+        checkSummaries.put(node, result);
+        return result;
+    }
+
+    private void updateVisibleFavoriteState(FavoriteTreeNode node)
+    {
+        treeViewer.update(node, null);
+        if (treeViewer.getExpandedState(node))
+        {
+            node.children.forEach(this::updateVisibleFavoriteState);
+        }
+    }
+
+    private void updateParentFavoriteStates(FavoriteTreeNode node)
+    {
+        for (FavoriteTreeNode parent = node.parent; parent != null; parent = parent.parent)
+        {
+            treeViewer.update(parent, null);
+        }
+    }
+
+    private void refreshAfterFavoriteStateChange()
+    {
+        if (!visibilityFilter.isOnlySelected())
+        {
+            return;
+        }
+        if (searchActive)
+        {
+            scheduleSearch(searchText.getText());
+        }
+        else
+        {
+            refreshSelectedVisibility();
+        }
+    }
+
+    private void restartSearch()
+    {
+        cancelPendingSearch();
+        int generation = ++searchGeneration;
+        applySearch(generation, searchText.getText());
+    }
+
+    private void refreshSelectedVisibility()
+    {
+        treeViewer.getControl().setRedraw(false);
+        try
+        {
+            boolean autoExpand =
+                visibilityFilter.isOnlySelected() && shouldAutoExpandSelected();
+            treeViewer.refresh(true);
+            if (visibilityFilter.isOnlySelected())
+            {
+                if (autoExpand)
+                {
+                    setExpandedMatchingElements();
+                }
+                else
+                {
+                    treeViewer.setExpandedElements(NO_EXPANDED_ELEMENTS);
+                }
+            }
+        }
+        finally
+        {
+            treeViewer.getControl().setRedraw(true);
+        }
+    }
+
+    private boolean shouldAutoExpandSelected()
+    {
+        return checkedUuids(currentProject).size() <= FavoriteUiLimits.MAX_AUTO_EXPANDED_OBJECTS;
     }
 
     private void switchProject(String projectName)
@@ -431,19 +733,29 @@ public class FavoritesManagementDialog extends Dialog
 
     private void loadProject(String projectName)
     {
-        TreeBuildResult buildResult = buildTree(projectName);
+        cancelPendingSearch();
+        cancelSearchJob();
+        int generation = ++searchGeneration;
+        TreeBuildResult buildResult =
+            treeByProject.computeIfAbsent(projectName, FavoritesManagementDialog::buildTree);
         currentRoots = buildResult.roots();
-        invalidateViewCaches();
-        searchActive = !visibilityFilter.pattern().isEmpty();
-        statusLabel.setText(statusMessageFor(buildResult));
+        imageByClass.clear();
+        initializeCheckState(projectName, buildResult.configurationUuid());
+        visibilityFilter.clearSearch();
+        searchActive = false;
+        setSearchHighlighting(false);
+        projectStatusMessage = statusMessageFor(buildResult);
+        setStatusMessage(projectStatusMessage);
         treeViewer.setInput(currentRoots);
-        if (visibilityFilter.isOnlySelected())
+
+        String pattern = searchText == null ? "" : searchText.getText();
+        if (pattern.trim().length() >= MIN_SEARCH_PATTERN_LENGTH)
         {
-            currentRoots.forEach(this::expandMatchingBranches);
+            applySearch(generation, pattern);
         }
-        else if (!visibilityFilter.pattern().isEmpty())
+        else if (visibilityFilter.isOnlySelected() && shouldAutoExpandSelected())
         {
-            currentRoots.forEach(this::expandSearchMatches);
+            setExpandedMatchingElements();
         }
     }
 
@@ -457,25 +769,37 @@ public class FavoritesManagementDialog extends Dialog
         return "";
     }
 
+    private void setStatusMessage(String message)
+    {
+        statusLabel.setText(message == null ? "" : message);
+        statusLabel.getParent().layout(true, true);
+    }
+
+    private void setSearchHighlighting(boolean enabled)
+    {
+        if (favoriteTreeLabelProvider != null
+            && favoriteTreeLabelProvider.isOwnerDrawEnabled() != enabled)
+        {
+            favoriteTreeLabelProvider.setOwnerDrawEnabled(enabled);
+        }
+    }
 
     private boolean effectiveChecked(FavoriteTreeNode object)
     {
-        Map<String, PendingChange> pending = pendingByProject.getOrDefault(currentProject, Map.of());
-        PendingChange change = pending.get(object.target.uuid());
-        return change != null ? change.pin() : storedChecked(object);
-    }
-
-    private boolean storedChecked(FavoriteTreeNode object)
-    {
-        PinStore store = Activator.getDefault().getPinStore();
-        return object.mdObject == null ? store.isObjectPinned(currentProject, object.target.uuid())
-            : store.isObjectEffectivelyPinned(currentProject, object.uuidPath);
+        return checkedUuids(currentProject).contains(object.target.uuid());
     }
 
     private final Map<FavoriteTreeNode, CheckSummary> checkSummaries = new IdentityHashMap<>();
 
     private record CheckSummary(int total, int checked)
     {
+    }
+
+    enum FavoriteState
+    {
+        NONE,
+        PARTIAL,
+        ALL
     }
 
 
@@ -486,35 +810,100 @@ public class FavoritesManagementDialog extends Dialog
         {
             return cached;
         }
+        return recomputeCheckSummary(node);
+    }
+
+    private void initializeCheckState(String projectName, String configurationUuid)
+    {
+        if (checkedByProject.containsKey(projectName))
+        {
+            rebuildCheckSummaries();
+            return;
+        }
+        Set<String> originallyChecked = new LinkedHashSet<>();
+        PinStore.ProjectPinSnapshot pinSnapshot =
+            Activator.getDefault().getPinStore().getProjectPinSnapshot(projectName);
+        checkSummaries.clear();
+        for (FavoriteTreeNode root : currentRoots)
+        {
+            initializeCheckState(root, configurationUuid, pinSnapshot, originallyChecked);
+        }
+        originallyCheckedByProject.put(projectName, Set.copyOf(originallyChecked));
+        checkedByProject.put(projectName, new LinkedHashSet<>(originallyChecked));
+    }
+
+    private CheckSummary initializeCheckState(FavoriteTreeNode node, String configurationUuid,
+        PinStore.ProjectPinSnapshot snapshot, Set<String> originallyChecked)
+    {
         int total = node.isObject() ? 1 : 0;
-        int checked = node.isObject() && effectiveChecked(node) ? 1 : 0;
+        int checked = 0;
+        if (node.isObject() && snapshot.isEffectivelyPinned(uuidPath(node, configurationUuid)))
+        {
+            originallyChecked.add(node.target.uuid());
+            checked = 1;
+        }
         for (FavoriteTreeNode child : node.children)
         {
-            CheckSummary childSummary = checkSummary(child);
+            CheckSummary childSummary =
+                initializeCheckState(child, configurationUuid, snapshot, originallyChecked);
             total += childSummary.total();
             checked += childSummary.checked();
         }
-        CheckSummary result = new CheckSummary(total, checked);
-        checkSummaries.put(node, result);
+        CheckSummary summary = new CheckSummary(total, checked);
+        checkSummaries.put(node, summary);
+        return summary;
+    }
+
+    static List<String> uuidPath(FavoriteTreeNode object, String configurationUuid)
+    {
+        List<String> result = new ArrayList<>();
+        for (FavoriteTreeNode current = object; current != null; current = current.parent)
+        {
+            if (current.isObject())
+            {
+                result.add(current.target.uuid());
+            }
+        }
+        if (configurationUuid != null && !configurationUuid.isBlank())
+        {
+            result.add(configurationUuid);
+        }
         return result;
     }
 
-    private void invalidateViewCaches()
+    private Set<String> checkedUuids(String projectName)
     {
-        visibilityFilter.invalidate();
-        checkSummaries.clear();
+        return checkedByProject.getOrDefault(projectName, Set.of());
     }
 
-
-    private void recordChange(FavoriteTreeNode object, boolean checked)
+    private void rebuildCheckSummaries()
     {
-        boolean originallyPinned = storedChecked(object);
+        checkSummaries.clear();
+        currentRoots.forEach(this::checkSummary);
+    }
+
+    private boolean recordChange(FavoriteTreeNode object, boolean checked)
+    {
+        Set<String> selected = checkedByProject.get(currentProject);
+        if (selected == null)
+        {
+            return false;
+        }
+        String uuid = object.target.uuid();
+        boolean changed = checked ? selected.add(uuid) : selected.remove(uuid);
+        if (!changed)
+        {
+            return false;
+        }
+
+        boolean originallyPinned =
+            originallyCheckedByProject.getOrDefault(currentProject, Set.of()).contains(uuid);
         Map<String, PendingChange> projectPending = pendingByProject.get(currentProject);
         if (checked == originallyPinned)
         {
             if (projectPending != null)
             {
-                projectPending.remove(object.target.uuid());
+                projectPending.remove(uuid);
                 if (projectPending.isEmpty())
                 {
                     pendingByProject.remove(currentProject);
@@ -528,14 +917,16 @@ public class FavoritesManagementDialog extends Dialog
                 projectPending = new LinkedHashMap<>();
                 pendingByProject.put(currentProject, projectPending);
             }
-            projectPending.put(object.target.uuid(), new PendingChange(object.target, checked));
+            projectPending.put(uuid, new PendingChange(object.target, checked));
         }
+        return true;
     }
 
     @Override
     protected void okPressed()
     {
         applyPendingChanges();
+        ToggleFilterHandler.enableFilter(PlatformUI.getWorkbench().getActiveWorkbenchWindow());
         super.okPressed();
     }
 
@@ -574,6 +965,8 @@ public class FavoritesManagementDialog extends Dialog
             return false;
         }
         pendingByProject.clear();
+        cancelPendingSearch();
+        cancelSearchJob();
         boolean closed = super.close();
         if (closed && titleImage != null)
         {
@@ -602,7 +995,8 @@ public class FavoritesManagementDialog extends Dialog
     }
 
 
-    private record TreeBuildResult(List<FavoriteTreeNode> roots, boolean configurationAvailable)
+    private record TreeBuildResult(List<FavoriteTreeNode> roots, boolean configurationAvailable,
+        String configurationUuid)
     {
     }
 
@@ -613,17 +1007,15 @@ public class FavoritesManagementDialog extends Dialog
         Configuration configuration = MetadataPinSupport.getConfiguration(project);
         if (configuration == null)
         {
-            return new TreeBuildResult(List.of(), false);
+            return new TreeBuildResult(List.of(), false, null);
         }
 
         FavoriteTreeModel.BuildResult buildResult = FavoriteTreeModel.build(configuration);
 
-        Activator.getDefault().getPinStore().pruneMissingObjects(projectName, buildResult.existingUuids());
-
-        return new TreeBuildResult(buildResult.roots(), true);
+        return new TreeBuildResult(buildResult.roots(), true, MetadataPinSupport.getUuid(configuration));
     }
 
-    private static final class FavoriteTreeContentProvider implements ITreeContentProvider
+    private final class FavoriteTreeContentProvider implements ITreeContentProvider
     {
         @Override
         @SuppressWarnings("unchecked")
@@ -641,13 +1033,17 @@ public class FavoritesManagementDialog extends Dialog
         @Override
         public Object getParent(Object element)
         {
-            return null;
+            return ((FavoriteTreeNode)element).parent;
         }
 
         @Override
         public boolean hasChildren(Object element)
         {
-            return element instanceof FavoriteTreeNode node && !node.children.isEmpty();
+            if (!(element instanceof FavoriteTreeNode node))
+            {
+                return false;
+            }
+            return node.children.stream().anyMatch(visibilityFilter::matchesSubtree);
         }
     }
 
@@ -671,6 +1067,12 @@ public class FavoritesManagementDialog extends Dialog
             cell.setText(node.label);
             cell.setImage(imageFor(node));
             cell.setStyleRanges(highlightRanges(node.normalizedLabel, visibilityFilter.pattern()));
+            if (cell.getItem() instanceof TreeItem item)
+            {
+                FavoriteState state = favoriteState(node);
+                item.setChecked(state != FavoriteState.NONE);
+                item.setGrayed(state == FavoriteState.PARTIAL);
+            }
         }
 
         private Image imageFor(FavoriteTreeNode node)
@@ -688,7 +1090,18 @@ public class FavoritesManagementDialog extends Dialog
             {
                 mdObject = node.firstMdObject();
             }
-            return mdObject == null ? null : navigatorLabelProvider.getImage(mdObject);
+            if (mdObject == null)
+            {
+                return null;
+            }
+            EClass type = mdObject.eClass();
+            if (imageByClass.containsKey(type))
+            {
+                return imageByClass.get(type);
+            }
+            Image image = navigatorLabelProvider.getImage(mdObject);
+            imageByClass.put(type, image);
+            return image;
         }
 
         private StyleRange[] highlightRanges(String normalizedLabel, String pattern)
@@ -716,20 +1129,23 @@ public class FavoritesManagementDialog extends Dialog
 
         private boolean onlySelected;
 
-        private final Map<FavoriteTreeNode, Boolean> subtreeMatches = new IdentityHashMap<>();
+        private Set<FavoriteTreeNode> searchVisibleNodes = Set.of();
 
-        private final Map<FavoriteTreeNode, Boolean> labelSubtreeMatches = new IdentityHashMap<>();
-
-        void setPattern(String text)
+        void applySearch(String value, FavoriteTreeSearch.Result result)
         {
-            pattern = text == null ? "" : text.trim().toLowerCase(Locale.ROOT);
-            invalidate();
+            pattern = value;
+            searchVisibleNodes = result.visibleNodes();
+        }
+
+        void clearSearch()
+        {
+            pattern = "";
+            searchVisibleNodes = Set.of();
         }
 
         void setOnlySelected(boolean value)
         {
             onlySelected = value;
-            invalidate();
         }
 
         boolean isOnlySelected()
@@ -742,12 +1158,6 @@ public class FavoritesManagementDialog extends Dialog
             return pattern;
         }
 
-        void invalidate()
-        {
-            subtreeMatches.clear();
-            labelSubtreeMatches.clear();
-        }
-
         @Override
         public boolean select(Viewer viewer, Object parentElement, Object element)
         {
@@ -757,53 +1167,11 @@ public class FavoritesManagementDialog extends Dialog
 
         boolean matchesSubtree(FavoriteTreeNode node)
         {
-            Boolean cached = subtreeMatches.get(node);
-            if (cached != null)
+            if (pattern.isEmpty())
             {
-                return cached;
+                return !onlySelected || checkSummary(node).checked() > 0;
             }
-            boolean result = objectMatches(node)
-                || node.children.stream().anyMatch(this::matchesSubtree);
-            subtreeMatches.put(node, result);
-            return result;
-        }
-
-
-        boolean labelMatches(FavoriteTreeNode object)
-        {
-            return object.isObject()
-                && !pattern.isEmpty()
-                && object.normalizedLabel.contains(pattern)
-                && (!onlySelected || effectiveChecked(object));
-        }
-
-        boolean labelMatchesSubtree(FavoriteTreeNode node)
-        {
-            Boolean cached = labelSubtreeMatches.get(node);
-            if (cached != null)
-            {
-                return cached;
-            }
-            boolean result = labelMatches(node)
-                || node.children.stream().anyMatch(this::labelMatchesSubtree);
-            labelSubtreeMatches.put(node, result);
-            return result;
-        }
-
-        private boolean objectMatches(FavoriteTreeNode object)
-        {
-            if (!object.isObject())
-            {
-                return false;
-            }
-            boolean textMatches = pattern.isEmpty()
-                || object.normalizedLabel.contains(pattern)
-                || object.normalizedFqn.contains(pattern);
-            if (!textMatches)
-            {
-                return false;
-            }
-            return !onlySelected || effectiveChecked(object);
+            return searchVisibleNodes.contains(node);
         }
     }
 }

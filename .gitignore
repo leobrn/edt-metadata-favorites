@@ -3,5 +3,8 @@
 /.build/
 .idea/
 .vscode/
+.project
+.classpath
+.settings/
 *.iml
 *.log

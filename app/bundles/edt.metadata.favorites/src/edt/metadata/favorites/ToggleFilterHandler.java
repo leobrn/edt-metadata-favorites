@@ -36,59 +36,88 @@ public class ToggleFilterHandler extends AbstractHandler
     public Object execute(ExecutionEvent event) throws ExecutionException
     {
         IWorkbenchWindow window = HandlerUtil.getActiveWorkbenchWindow(event);
+        updateFilter(window, null);
+
+        return null;
+    }
+
+    static void enableFilter(IWorkbenchWindow window)
+    {
+        updateFilter(window, Boolean.TRUE);
+    }
+
+    private static void updateFilter(IWorkbenchWindow window, Boolean requestedState)
+    {
+        CommonViewer viewer = findViewer(window);
+        if (viewer == null)
+        {
+            return;
+        }
+        INavigatorFilterService filterService = viewer.getNavigatorContentService().getFilterService();
+        Set<String> activeIds = activeFilterIds(filterService);
+        boolean currentlyActive = activeIds.contains(PinnedOnlyFilter.ID);
+        boolean enabling = requestedState == null ? !currentlyActive : requestedState;
+        if (currentlyActive == enabling)
+        {
+            return;
+        }
+        if (enabling)
+        {
+            activeIds.add(PinnedOnlyFilter.ID);
+        }
+        else
+        {
+            activeIds.remove(PinnedOnlyFilter.ID);
+        }
+
+        filterService.activateFilterIdsAndUpdateViewer(activeIds.toArray(String[]::new));
+        filterService.persistFilterActivationState();
+        if (enabling)
+        {
+            viewer.getControl().getDisplay().asyncExec(
+                () -> PinOperations.expandProjectsWithPinnedObjects(viewer));
+        }
+        refreshCommand(window);
+    }
+
+    private static Set<String> activeFilterIds(INavigatorFilterService filterService)
+    {
+        Set<String> result = new LinkedHashSet<>();
+        for (ICommonFilterDescriptor descriptor : filterService.getVisibleFilterDescriptors())
+        {
+            if (filterService.isActive(descriptor.getId()))
+            {
+                result.add(descriptor.getId());
+            }
+        }
+        return result;
+    }
+
+    private static CommonViewer findViewer(IWorkbenchWindow window)
+    {
         if (window == null)
         {
             return null;
         }
-
         IWorkbenchPage page = window.getActivePage();
         if (page == null)
         {
             return null;
         }
-
         IViewPart view = page.findView(NAVIGATOR_ID);
-        if (!(view instanceof CommonNavigator navigator))
-        {
-            return null;
-        }
+        return view instanceof CommonNavigator navigator ? navigator.getCommonViewer() : null;
+    }
 
-        CommonViewer viewer = navigator.getCommonViewer();
-        INavigatorFilterService filterService = viewer.getNavigatorContentService().getFilterService();
-
-        Set<String> activeIds = new LinkedHashSet<>();
-        for (ICommonFilterDescriptor descriptor : filterService.getVisibleFilterDescriptors())
-        {
-            if (filterService.isActive(descriptor.getId()))
-            {
-                activeIds.add(descriptor.getId());
-            }
-        }
-
-        boolean enabling = !activeIds.remove(PinnedOnlyFilter.ID);
-        if (enabling)
-        {
-            activeIds.add(PinnedOnlyFilter.ID);
-        }
-
-        filterService.activateFilterIdsAndUpdateViewer(activeIds.toArray(new String[0]));
-        filterService.persistFilterActivationState();
-
-        if (enabling)
-        {
-            viewer.getControl().getDisplay().asyncExec(() -> PinOperations.expandProjectsWithPinnedObjects(viewer));
-        }
-
+    private static void refreshCommand(IWorkbenchWindow window)
+    {
         ICommandService commandService = window.getService(ICommandService.class);
         if (commandService != null)
         {
             commandService.refreshElements(COMMAND_ID, null);
         }
-
-        return null;
     }
 
-    private boolean isFilterActive(CommonViewer viewer)
+    private static boolean isFilterActive(CommonViewer viewer)
     {
         for (ViewerFilter filter : viewer.getFilters())
         {

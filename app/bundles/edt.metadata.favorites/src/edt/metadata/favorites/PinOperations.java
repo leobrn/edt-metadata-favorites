@@ -139,6 +139,19 @@ public final class PinOperations
             return;
         }
         PinStore store = Activator.getDefault().getPinStore();
+        int pinnedObjects = 0;
+        for (TreeItem item : viewer.getTree().getItems())
+        {
+            String projectName = MetadataPinSupport.getProjectName(item.getData());
+            if (projectName != null)
+            {
+                pinnedObjects += store.getPinnedObjectCount(projectName);
+                if (pinnedObjects > FavoriteUiLimits.MAX_AUTO_EXPANDED_OBJECTS)
+                {
+                    return;
+                }
+            }
+        }
         for (TreeItem item : viewer.getTree().getItems())
         {
             Object element = item.getData();

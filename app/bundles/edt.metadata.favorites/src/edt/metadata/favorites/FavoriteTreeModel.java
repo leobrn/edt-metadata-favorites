@@ -3,17 +3,20 @@
  */
 package edt.metadata.favorites;
 
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.IdentityHashMap;
 import java.util.LinkedHashMap;
-import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
+import org.eclipse.emf.ecore.EClass;
+import org.eclipse.emf.ecore.EClassifier;
 import org.eclipse.emf.ecore.EObject;
+import org.eclipse.emf.ecore.EPackage;
 import org.eclipse.emf.ecore.EReference;
 import org.eclipse.emf.ecore.util.EcoreUtil;
 
@@ -24,6 +27,8 @@ import com._1c.g5.v8.dt.metadata.mdclass.MdObject;
 
 final class FavoriteTreeModel
 {
+    private static final ContainmentReachability CONTAINMENT_REACHABILITY =
+        new ContainmentReachability();
 
     private static final Map<String, String> GROUP_LABELS = Map.ofEntries(
         Map.entry("Catalog", "Справочники"),
@@ -118,7 +123,7 @@ final class FavoriteTreeModel
     }
 
 
-    record BuildResult(List<FavoriteTreeNode> roots, Set<String> existingUuids)
+    record BuildResult(List<FavoriteTreeNode> roots)
     {
     }
 
@@ -134,7 +139,7 @@ final class FavoriteTreeModel
                 continue;
             }
 
-            Object value = configuration.eGet(reference, true);
+            Object value = configuration.eGet(reference, false);
             if (!(value instanceof Iterable<?> values))
             {
                 continue;
@@ -143,7 +148,7 @@ final class FavoriteTreeModel
             {
                 if (candidate instanceof EObject eObject)
                 {
-                    EObject resolved = EcoreUtil.resolve(eObject, configuration);
+                    EObject resolved = resolve(eObject, configuration);
                     if (!(resolved instanceof MdObject mdObject))
                     {
                         continue;
@@ -159,7 +164,6 @@ final class FavoriteTreeModel
 
         Map<String, FavoriteTreeNode> roots = new LinkedHashMap<>();
         Map<String, FavoriteTreeNode> commonGroups = new LinkedHashMap<>();
-        Set<String> existingUuids = new LinkedHashSet<>();
         for (MdObject mdObject : objectsByUuid.values())
         {
             String uuid = MetadataPinSupport.getUuid(mdObject);
@@ -171,7 +175,7 @@ final class FavoriteTreeModel
                 FavoriteTreeNode commonRoot = roots.computeIfAbsent(COMMON_GROUP, FavoriteTreeNode::group);
                 group = commonGroups.computeIfAbsent(groupLabel, label -> {
                     FavoriteTreeNode child = FavoriteTreeNode.group(label);
-                    commonRoot.children.add(child);
+                    commonRoot.addChild(child);
                     return child;
                 });
             }
@@ -182,8 +186,8 @@ final class FavoriteTreeModel
             String fqn = MetadataPinSupport.getFqn(mdObject);
             String label = mdObject.getName() != null ? mdObject.getName() : fqn;
             FavoriteTreeNode objectNode = FavoriteTreeNode.object(label, new PinTarget(uuid, fqn), mdObject);
-            group.children.add(objectNode);
-            appendNestedObjects(objectNode, mdObject, existingUuids);
+            group.addChild(objectNode);
+            appendNestedObjects(objectNode, mdObject, CONTAINMENT_REACHABILITY);
         }
 
         List<FavoriteTreeNode> result = new ArrayList<>(roots.values());
@@ -196,22 +200,21 @@ final class FavoriteTreeModel
             }
             root.sortLeafChildren();
         }
-        return new BuildResult(result, existingUuids);
+        return new BuildResult(result);
     }
 
 
     private static void appendNestedObjects(FavoriteTreeNode rootNode, MdObject rootObject,
-        Set<String> existingUuids)
+        ContainmentReachability reachability)
     {
         Map<FavoriteTreeNode, Map<String, FavoriteTreeNode>> groups = new IdentityHashMap<>();
         Set<EObject> visited = Collections.newSetFromMap(new IdentityHashMap<>());
-        existingUuids.add(rootNode.target.uuid());
-        appendContainedObjects(rootObject, rootNode, null, groups, existingUuids, visited);
+        appendContainedObjects(rootObject, rootNode, null, groups, visited, reachability);
     }
 
     private static void appendContainedObjects(EObject owner, FavoriteTreeNode parentNode,
         String inheritedGroupKey, Map<FavoriteTreeNode, Map<String, FavoriteTreeNode>> groups,
-        Set<String> existingUuids, Set<EObject> visited)
+        Set<EObject> visited, ContainmentReachability reachability)
     {
         if (!visited.add(owner))
         {
@@ -219,58 +222,121 @@ final class FavoriteTreeModel
         }
         for (EReference reference : owner.eClass().getEAllContainments())
         {
-            Object value = owner.eGet(reference, true);
+            if (!reachability.mayContainMdObject(reference.getEReferenceType()))
+            {
+                continue;
+            }
+            Object value = owner.eGet(reference, false);
             if (reference.isMany() && value instanceof Iterable<?> values)
             {
                 for (Object candidate : values)
                 {
                     if (candidate instanceof EObject child)
                     {
-                        appendContainedObject(EcoreUtil.resolve(child, owner), parentNode,
+                        appendContainedObject(resolve(child, owner), parentNode,
                             inheritedGroupKey == null ? reference.getName() : inheritedGroupKey,
-                            groups, existingUuids, visited);
+                            groups, visited, reachability);
                     }
                 }
             }
             else if (value instanceof EObject child)
             {
-                appendContainedObject(EcoreUtil.resolve(child, owner), parentNode,
+                appendContainedObject(resolve(child, owner), parentNode,
                     inheritedGroupKey == null ? reference.getName() : inheritedGroupKey,
-                    groups, existingUuids, visited);
+                    groups, visited, reachability);
             }
         }
     }
 
     private static void appendContainedObject(EObject child, FavoriteTreeNode parentNode, String groupKey,
-        Map<FavoriteTreeNode, Map<String, FavoriteTreeNode>> groups, Set<String> existingUuids,
-        Set<EObject> visited)
+        Map<FavoriteTreeNode, Map<String, FavoriteTreeNode>> groups, Set<EObject> visited,
+        ContainmentReachability reachability)
     {
         if (child instanceof MdObject mdObject)
         {
             String uuid = MetadataPinSupport.getUuid(mdObject);
             if (uuid == null)
             {
-                appendContainedObjects(child, parentNode, groupKey, groups, existingUuids, visited);
+                appendContainedObjects(child, parentNode, groupKey, groups, visited, reachability);
                 return;
             }
             String groupLabel = NESTED_GROUP_LABELS.getOrDefault(groupKey, groupKey);
             FavoriteTreeNode nestedGroup = groups.computeIfAbsent(parentNode, key -> new LinkedHashMap<>())
                 .computeIfAbsent(groupKey, key -> {
                     FavoriteTreeNode value = FavoriteTreeNode.group(groupLabel);
-                    parentNode.children.add(value);
+                    parentNode.addChild(value);
                     return value;
                 });
 
             String fqn = MetadataPinSupport.getFqn(mdObject);
             String label = mdObject.getName() != null ? mdObject.getName() : fqn;
             FavoriteTreeNode childNode = FavoriteTreeNode.object(label, new PinTarget(uuid, fqn), mdObject);
-            nestedGroup.children.add(childNode);
-            existingUuids.add(uuid);
-            appendContainedObjects(child, childNode, null, groups, existingUuids, visited);
+            nestedGroup.addChild(childNode);
+            appendContainedObjects(child, childNode, null, groups, visited, reachability);
         }
         else
         {
-            appendContainedObjects(child, parentNode, groupKey, groups, existingUuids, visited);
+            appendContainedObjects(child, parentNode, groupKey, groups, visited, reachability);
+        }
+    }
+
+    private static EObject resolve(EObject object, EObject context)
+    {
+        return object.eIsProxy() ? EcoreUtil.resolve(object, context) : object;
+    }
+
+    private static final class ContainmentReachability
+    {
+        private final Map<EClass, Boolean> cache = new IdentityHashMap<>();
+
+        synchronized boolean mayContainMdObject(EClass type)
+        {
+            Boolean cached = cache.get(type);
+            if (cached != null)
+            {
+                return cached;
+            }
+
+            Set<EClass> visited = Collections.newSetFromMap(new IdentityHashMap<>());
+            ArrayDeque<EClass> pending = new ArrayDeque<>();
+            pending.add(type);
+            while (!pending.isEmpty())
+            {
+                EClass current = pending.removeFirst();
+                if (!visited.add(current))
+                {
+                    continue;
+                }
+                if (MdClassPackage.Literals.MD_OBJECT.isSuperTypeOf(current))
+                {
+                    cache.put(type, true);
+                    return true;
+                }
+                for (EReference reference : current.getEAllContainments())
+                {
+                    pending.add(reference.getEReferenceType());
+                }
+                addKnownSubtypes(current, pending);
+            }
+            cache.put(type, false);
+            return false;
+        }
+
+        private static void addKnownSubtypes(EClass type, ArrayDeque<EClass> pending)
+        {
+            EPackage ePackage = type.getEPackage();
+            if (ePackage == null)
+            {
+                return;
+            }
+            for (EClassifier classifier : ePackage.getEClassifiers())
+            {
+                if (classifier instanceof EClass candidate && candidate != type
+                    && type.isSuperTypeOf(candidate))
+                {
+                    pending.add(candidate);
+                }
+            }
         }
     }
 

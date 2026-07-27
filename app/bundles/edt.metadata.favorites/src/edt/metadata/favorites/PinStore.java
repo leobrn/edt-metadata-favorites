@@ -72,6 +72,31 @@ public class PinStore
         this.storageFile = stateLocation.append(FILE_NAME).toFile().toPath();
     }
 
+    record ProjectPinSnapshot(Set<String> individualPins, Set<String> recursivePins,
+        Set<String> recursiveExclusions)
+    {
+        boolean isEffectivelyPinned(Iterable<String> uuidPath)
+        {
+            boolean self = true;
+            for (String uuid : uuidPath)
+            {
+                if (self && individualPins.contains(uuid))
+                {
+                    return true;
+                }
+                if (recursiveExclusions.contains(uuid))
+                {
+                    return false;
+                }
+                if (recursivePins.contains(uuid))
+                {
+                    return true;
+                }
+                self = false;
+            }
+            return false;
+        }
+    }
 
     public synchronized int getModCount()
     {
@@ -171,6 +196,30 @@ public class PinStore
         return false;
     }
 
+    synchronized ProjectPinSnapshot getProjectPinSnapshot(String projectName)
+    {
+        if (!ensureLoaded())
+        {
+            return new ProjectPinSnapshot(Set.of(), Set.of(), Set.of());
+        }
+        return new ProjectPinSnapshot(projectUuids(pinnedObjects, projectName),
+            projectUuids(recursivePins, projectName),
+            projectUuids(recursiveExclusions, projectName));
+    }
+
+    private static Set<String> projectUuids(Set<PinnedObjectKey> keys, String projectName)
+    {
+        Set<String> result = new HashSet<>();
+        for (PinnedObjectKey key : keys)
+        {
+            if (key.projectName().equals(projectName))
+            {
+                result.add(key.uuid());
+            }
+        }
+        return Set.copyOf(result);
+    }
+
     public synchronized boolean isRecursivePin(String projectName, String uuid)
     {
         return ensureLoaded() && recursivePins.contains(new PinnedObjectKey(projectName, uuid));
@@ -192,6 +241,23 @@ public class PinStore
             }
         }
         return List.copyOf(result);
+    }
+
+    synchronized int getPinnedObjectCount(String projectName)
+    {
+        if (!ensureLoaded())
+        {
+            return 0;
+        }
+        int result = 0;
+        for (PinnedObjectKey key : pinnedObjects)
+        {
+            if (key.projectName().equals(projectName))
+            {
+                result++;
+            }
+        }
+        return result;
     }
 
     public synchronized void pinObject(String projectName, PinTarget target)
@@ -318,6 +384,14 @@ public class PinStore
     }
 
 
+    /**
+     * Removes object state only when {@code existingUuids} is an authoritative, exhaustive snapshot.
+     * Never pass UUIDs collected from the optimized management tree: its containment traversal
+     * intentionally prunes branches and cannot prove that an absent object was deleted.
+     *
+     * @param projectName project whose object state should be pruned
+     * @param existingUuids complete set of UUIDs that currently exist in the project
+     */
     public synchronized void pruneMissingObjects(String projectName, Set<String> existingUuids)
     {
         if (!ensureLoaded())

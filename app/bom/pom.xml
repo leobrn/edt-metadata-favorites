@@ -27,7 +27,7 @@
     <maven.compiler.target>17</maven.compiler.target>
     <maven.compiler.release>17</maven.compiler.release>
 
-    <maven.build.timestamp.format>'v'yyyyMMdd-HHmm</maven.build.timestamp.format>
+    <maven.build.timestamp.format>'v'yyyyMMdd-HHmmss</maven.build.timestamp.format>
     <qualifier>${maven.build.timestamp}</qualifier>
 
     <p2repo.archive.skip>false</p2repo.archive.skip>
@@ -102,7 +102,7 @@
           <artifactId>tycho-packaging-plugin</artifactId>
           <version>${tycho.version}</version>
           <configuration>
-            <format>'v'yyyyMMddHHmm</format>
+            <format>'v'yyyyMMddHHmmss</format>
           </configuration>
         </plugin>
         <plugin>

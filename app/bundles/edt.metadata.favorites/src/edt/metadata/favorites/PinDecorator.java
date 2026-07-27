@@ -34,6 +34,7 @@ public class PinDecorator extends LabelProvider
             if (store.isProjectPinned(projectName))
             {
                 decoration.addOverlay(PIN_OVERLAY, IDecoration.TOP_RIGHT);
+                decoration.addSuffix(" ★");
             }
             return;
         }

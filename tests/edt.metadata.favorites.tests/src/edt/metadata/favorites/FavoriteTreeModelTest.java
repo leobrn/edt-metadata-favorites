@@ -7,7 +7,9 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 
 import org.junit.Test;
@@ -74,20 +76,23 @@ public class FavoriteTreeModelTest
         FavoriteTreeNode attribute = findChild(attributes, "Артикул");
         assertNotNull(attribute);
         assertTrue(attribute.isObject());
+        assertEquals(attributes, attribute.parent);
+        assertEquals(catalogNode, attributes.parent);
         assertEquals(attributeUuid.toString(), attribute.target.uuid());
-        assertEquals("UUID-путь листа должен начинаться с его собственного UUID",
-            attributeUuid.toString(), attribute.uuidPath.get(0));
     }
 
     @Test
-    public void collectsUuidsOfAllObjectsIncludingNested()
+    public void buildsAllObjectsIncludingNested()
     {
         FavoriteTreeModel.BuildResult result = FavoriteTreeModel.build(configuration());
+        Set<String> treeUuids = new LinkedHashSet<>();
+        result.roots().forEach(root ->
+            root.forEachObject(object -> treeUuids.add(object.target.uuid())));
 
-        assertTrue(result.existingUuids().contains(catalogUuid.toString()));
-        assertTrue(result.existingUuids().contains(secondCatalogUuid.toString()));
-        assertTrue(result.existingUuids().contains(attributeUuid.toString()));
-        assertTrue(result.existingUuids().contains(moduleUuid.toString()));
+        assertTrue(treeUuids.contains(catalogUuid.toString()));
+        assertTrue(treeUuids.contains(secondCatalogUuid.toString()));
+        assertTrue(treeUuids.contains(attributeUuid.toString()));
+        assertTrue(treeUuids.contains(moduleUuid.toString()));
     }
 
     @Test

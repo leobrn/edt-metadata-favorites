@@ -27,8 +27,7 @@ final class FavoriteTreeNode
 
     final MdObject mdObject;
 
-
-    final List<String> uuidPath;
+    FavoriteTreeNode parent;
 
     final List<FavoriteTreeNode> children = new ArrayList<>();
 
@@ -39,7 +38,6 @@ final class FavoriteTreeNode
         this.normalizedFqn = normalize(target == null ? null : target.fqn());
         this.target = target;
         this.mdObject = mdObject;
-        this.uuidPath = mdObject == null ? List.of() : MetadataPinSupport.getUuidPath(mdObject);
     }
 
     static FavoriteTreeNode group(String label)
@@ -65,6 +63,12 @@ final class FavoriteTreeNode
     boolean isObject()
     {
         return target != null;
+    }
+
+    void addChild(FavoriteTreeNode child)
+    {
+        child.parent = this;
+        children.add(child);
     }
 
     void forEachObject(Consumer<FavoriteTreeNode> action)

@@ -83,7 +83,7 @@ if (Test-Path -LiteralPath $releaseDir)
 New-Item -ItemType Directory -Path $releaseDir | Out-Null
 
 $bundleName = "edt-metadata-favorites-$version.jar"
-$updateSiteName = "edt-metadata-favorites-update-site-$version.zip"
+$updateSiteName = "edt-metadata-favorites-$version.zip"
 $bundlePath = Join-Path $releaseDir $bundleName
 $updateSitePath = Join-Path $releaseDir $updateSiteName
 
@@ -150,4 +150,3 @@ Set-Content -LiteralPath (Join-Path $releaseDir 'SHA256SUMS.txt') -Value $checks
 
 Write-Host "Release package: $releaseDir"
 Get-ChildItem -LiteralPath $releaseDir | Select-Object Name, Length
-

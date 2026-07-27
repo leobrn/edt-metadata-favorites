@@ -84,6 +84,36 @@ public class PinStoreTest
     }
 
     @Test
+    public void projectSnapshotMatchesEffectivePinRules() throws Exception
+    {
+        PinTarget root = new PinTarget("root", "Catalog.Товары");
+        PinTarget form = new PinTarget("form", "Catalog.Товары.Form.Основная");
+        PinStore store = newStore();
+        store.pinBranch("SM", root, List.of(root, form));
+        store.unpinObject("SM", "excluded");
+
+        PinStore.ProjectPinSnapshot snapshot = store.getProjectPinSnapshot("SM");
+
+        assertTrue(snapshot.isEffectivelyPinned(List.of("form", "root")));
+        assertTrue(snapshot.isEffectivelyPinned(List.of("new-form", "root")));
+        assertFalse(snapshot.isEffectivelyPinned(List.of("excluded", "root")));
+        assertFalse(snapshot.isEffectivelyPinned(List.of("unrelated")));
+    }
+
+    @Test
+    public void countsPinnedObjectsPerProject() throws Exception
+    {
+        PinStore store = newStore();
+        store.pinObject("SM", new PinTarget("one", "Catalog.Один"));
+        store.pinObject("SM", new PinTarget("two", "Catalog.Два"));
+        store.pinObject("OTHER", new PinTarget("other", "Catalog.Другой"));
+
+        assertEquals(2, store.getPinnedObjectCount("SM"));
+        assertEquals(1, store.getPinnedObjectCount("OTHER"));
+        assertEquals(0, store.getPinnedObjectCount("MISSING"));
+    }
+
+    @Test
     public void projectPinDoesNotActAsRecursiveObjectPin() throws Exception
     {
         PinStore store = newStore();

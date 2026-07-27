@@ -13,6 +13,7 @@ import java.util.Set;
 
 import javax.xml.parsers.DocumentBuilderFactory;
 
+import org.eclipse.jface.viewers.TreeViewer;
 import org.junit.Test;
 import org.w3c.dom.Element;
 import org.w3c.dom.NodeList;
@@ -83,8 +84,44 @@ public class FavoritesManagementDialogStructureTest
     @Test
     public void searchUsesMinimumLengthAndBoundedAutoExpansion() throws Exception
     {
-        assertEquals(Integer.valueOf(2), field("MIN_SEARCH_PATTERN_LENGTH"));
-        assertEquals(Integer.valueOf(300), field("MAX_AUTO_EXPANDED_SEARCH_RESULTS"));
+        assertEquals(Integer.valueOf(3), field("MIN_SEARCH_PATTERN_LENGTH"));
+        assertEquals(Integer.valueOf(300),
+            field(FavoriteUiLimits.class, "MAX_AUTO_EXPANDED_OBJECTS"));
+    }
+
+    @Test
+    public void managementTreeDoesNotUseCheckboxViewer() throws Exception
+    {
+        assertEquals(TreeViewer.class,
+            FavoritesManagementDialog.class.getDeclaredField("treeViewer").getType());
+    }
+
+    @Test
+    public void favoriteColumnHasThreeSummaryStates()
+    {
+        assertEquals(FavoritesManagementDialog.FavoriteState.NONE,
+            FavoritesManagementDialog.favoriteState(10, 0));
+        assertEquals(FavoritesManagementDialog.FavoriteState.PARTIAL,
+            FavoritesManagementDialog.favoriteState(10, 4));
+        assertEquals(FavoritesManagementDialog.FavoriteState.ALL,
+            FavoritesManagementDialog.favoriteState(10, 10));
+    }
+
+    @Test
+    public void managementTreeUuidPathIncludesConfiguration()
+    {
+        FavoriteTreeNode group = FavoriteTreeNode.group("Справочники");
+        FavoriteTreeNode catalog =
+            FavoriteTreeNode.object("Товары", new PinTarget("catalog", "Catalog.Товары"), null);
+        FavoriteTreeNode forms = FavoriteTreeNode.group("Формы");
+        FavoriteTreeNode form = FavoriteTreeNode.object("Основная",
+            new PinTarget("form", "Catalog.Товары.Form.Основная"), null);
+        group.addChild(catalog);
+        catalog.addChild(forms);
+        forms.addChild(form);
+
+        assertEquals(List.of("form", "catalog", "configuration"),
+            FavoritesManagementDialog.uuidPath(form, "configuration"));
     }
 
     @Test

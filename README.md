@@ -29,7 +29,6 @@
   групповой отметкой;
 - режим [«Только избранное»](docs/user-guide.md#фильтр-только-избранное) в Навигаторе;
 - визуальная отметка избранных элементов;
-- автоматическая очистка ссылок на удалённые объекты;
 - [горячие клавиши](docs/user-guide.md#горячие-клавиши) для текущего элемента и диалога управления.
 
 Избранное [хранится в служебной области workspace](docs/user-guide.md#где-хранится-избранное) и не
@@ -83,7 +82,7 @@ EDT Metadata Favorites позволяет один раз собрать объ�
 
 1. Откройте `Help → Install New Software`.
 2. Добавьте архив
-   `.build/releases/<version>/edt-metadata-favorites-update-site-<version>.zip`.
+   `.build/releases/<version>/edt-metadata-favorites-<version>.zip`.
 3. Выберите `EDT Metadata Favorites` и завершите установку.
 4. Перезапустите 1С:EDT.
 
