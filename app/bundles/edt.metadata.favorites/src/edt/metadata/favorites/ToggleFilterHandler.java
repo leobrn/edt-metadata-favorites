@@ -10,16 +10,12 @@ import java.util.Set;
 import org.eclipse.core.commands.AbstractHandler;
 import org.eclipse.core.commands.ExecutionEvent;
 import org.eclipse.core.commands.ExecutionException;
-import org.eclipse.jface.viewers.ViewerFilter;
-import org.eclipse.ui.IViewPart;
-import org.eclipse.ui.IWorkbenchPage;
 import org.eclipse.ui.IWorkbenchWindow;
 import org.eclipse.ui.PlatformUI;
 import org.eclipse.ui.commands.ICommandService;
 import org.eclipse.ui.commands.IElementUpdater;
 import org.eclipse.ui.handlers.HandlerUtil;
 import org.eclipse.ui.menus.UIElement;
-import org.eclipse.ui.navigator.CommonNavigator;
 import org.eclipse.ui.navigator.CommonViewer;
 import org.eclipse.ui.navigator.ICommonFilterDescriptor;
 import org.eclipse.ui.navigator.INavigatorFilterService;
@@ -29,8 +25,6 @@ public class ToggleFilterHandler extends AbstractHandler
     implements IElementUpdater
 {
     public static final String COMMAND_ID = "edt.metadata.favorites.toggleFilter";
-
-    private static final String NAVIGATOR_ID = "com._1c.g5.v8.dt.ui2.navigator";
 
     @Override
     public Object execute(ExecutionEvent event) throws ExecutionException
@@ -48,7 +42,7 @@ public class ToggleFilterHandler extends AbstractHandler
 
     private static void updateFilter(IWorkbenchWindow window, Boolean requestedState)
     {
-        CommonViewer viewer = findViewer(window);
+        CommonViewer viewer = NavigatorAccess.findViewer(window).orElse(null);
         if (viewer == null)
         {
             return;
@@ -93,21 +87,6 @@ public class ToggleFilterHandler extends AbstractHandler
         return result;
     }
 
-    private static CommonViewer findViewer(IWorkbenchWindow window)
-    {
-        if (window == null)
-        {
-            return null;
-        }
-        IWorkbenchPage page = window.getActivePage();
-        if (page == null)
-        {
-            return null;
-        }
-        IViewPart view = page.findView(NAVIGATOR_ID);
-        return view instanceof CommonNavigator navigator ? navigator.getCommonViewer() : null;
-    }
-
     private static void refreshCommand(IWorkbenchWindow window)
     {
         ICommandService commandService = window.getService(ICommandService.class);
@@ -115,18 +94,6 @@ public class ToggleFilterHandler extends AbstractHandler
         {
             commandService.refreshElements(COMMAND_ID, null);
         }
-    }
-
-    private static boolean isFilterActive(CommonViewer viewer)
-    {
-        for (ViewerFilter filter : viewer.getFilters())
-        {
-            if (filter instanceof PinnedOnlyFilter)
-            {
-                return true;
-            }
-        }
-        return false;
     }
 
     @Override
@@ -139,18 +106,12 @@ public class ToggleFilterHandler extends AbstractHandler
             {
                 return;
             }
-            IWorkbenchPage page = window.getActivePage();
-            if (page == null)
+            CommonViewer viewer = NavigatorAccess.findViewer(window).orElse(null);
+            if (viewer == null)
             {
                 return;
             }
-            IViewPart view = page.findView(NAVIGATOR_ID);
-            if (!(view instanceof CommonNavigator navigator))
-            {
-                return;
-            }
-            CommonViewer viewer = navigator.getCommonViewer();
-            element.setChecked(isFilterActive(viewer));
+            element.setChecked(NavigatorAccess.isFilterActive(viewer, PinnedOnlyFilter.class));
         }
         catch (RuntimeException e)
         {

@@ -61,8 +61,6 @@ import com._1c.g5.v8.dt.md.ui.shared.MdUiSharedImages;
 
 public class FavoritesManagementDialog extends Dialog
 {
-    private static final String NAVIGATOR_ID = "com._1c.g5.v8.dt.ui2.navigator";
-
     private static final int MIN_SEARCH_PATTERN_LENGTH = 3;
 
     private static final int SEARCH_DELAY_MS = 250;
@@ -508,7 +506,8 @@ public class FavoritesManagementDialog extends Dialog
         try
         {
             navigatorContentService =
-                NavigatorContentServiceFactory.INSTANCE.createContentService(NAVIGATOR_ID, treeViewer);
+                NavigatorContentServiceFactory.INSTANCE.createContentService(
+                    NavigatorAccess.NAVIGATOR_ID, treeViewer);
             return navigatorContentService.createCommonLabelProvider();
         }
         catch (RuntimeException e)
