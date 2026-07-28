@@ -101,6 +101,30 @@ public class PinStoreTest
     }
 
     @Test
+    public void effectivePinEntryPointsStayEquivalent() throws Exception
+    {
+        PinTarget individual = new PinTarget("individual", "Catalog.Индивидуальный");
+        PinTarget root = new PinTarget("root", "Catalog.Корень");
+        PinTarget nestedRoot = new PinTarget("nested-root", "Catalog.Корень.Form.ВложенныйКорень");
+        PinStore store = newStore();
+        store.pinObject("SM", individual);
+        store.pinBranch("SM", root, List.of(root));
+        store.pinBranch("SM", nestedRoot, List.of(nestedRoot));
+        store.unpinObject("SM", "excluded");
+        store.unpinObject("SM", "nested-excluded");
+
+        PinStore.ProjectPinSnapshot snapshot = store.getProjectPinSnapshot("SM");
+
+        assertEffectivePinParity(store, snapshot, List.of("individual"), true);
+        assertEffectivePinParity(store, snapshot, List.of("future", "root"), true);
+        assertEffectivePinParity(store, snapshot, List.of("excluded", "root"), false);
+        assertEffectivePinParity(store, snapshot,
+            List.of("nested-excluded", "nested-root", "root"), false);
+        assertEffectivePinParity(store, snapshot, List.of(), false);
+        assertEffectivePinParity(store, snapshot, List.of("unrelated"), false);
+    }
+
+    @Test
     public void countsPinnedObjectsPerProject() throws Exception
     {
         PinStore store = newStore();
@@ -291,6 +315,13 @@ public class PinStoreTest
     private PinStore newStore() throws Exception
     {
         return new PinStore(new org.eclipse.core.runtime.Path(temporaryFolder.getRoot().getAbsolutePath()));
+    }
+
+    private static void assertEffectivePinParity(PinStore store, PinStore.ProjectPinSnapshot snapshot,
+        Iterable<String> uuidPath, boolean expected)
+    {
+        assertEquals(expected, store.isObjectEffectivelyPinned("SM", uuidPath));
+        assertEquals(expected, snapshot.isEffectivelyPinned(uuidPath));
     }
 
     private Path storageFile() throws Exception

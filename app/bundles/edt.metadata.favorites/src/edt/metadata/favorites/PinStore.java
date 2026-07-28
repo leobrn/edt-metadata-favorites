@@ -18,6 +18,7 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Set;
 import java.util.TreeSet;
+import java.util.function.Predicate;
 
 import org.eclipse.core.runtime.IPath;
 
@@ -77,25 +78,32 @@ public class PinStore
     {
         boolean isEffectivelyPinned(Iterable<String> uuidPath)
         {
-            boolean self = true;
-            for (String uuid : uuidPath)
-            {
-                if (self && individualPins.contains(uuid))
-                {
-                    return true;
-                }
-                if (recursiveExclusions.contains(uuid))
-                {
-                    return false;
-                }
-                if (recursivePins.contains(uuid))
-                {
-                    return true;
-                }
-                self = false;
-            }
-            return false;
+            return PinStore.isEffectivelyPinned(uuidPath, individualPins::contains,
+                recursiveExclusions::contains, recursivePins::contains);
         }
+    }
+
+    static boolean isEffectivelyPinned(Iterable<String> uuidPath, Predicate<String> individual,
+        Predicate<String> exclusion, Predicate<String> recursive)
+    {
+        boolean self = true;
+        for (String uuid : uuidPath)
+        {
+            if (self && individual.test(uuid))
+            {
+                return true;
+            }
+            if (exclusion.test(uuid))
+            {
+                return false;
+            }
+            if (recursive.test(uuid))
+            {
+                return true;
+            }
+            self = false;
+        }
+        return false;
     }
 
     public synchronized int getModCount()
@@ -175,25 +183,10 @@ public class PinStore
         {
             return false;
         }
-        boolean self = true;
-        for (String uuid : uuidPath)
-        {
-            PinnedObjectKey key = new PinnedObjectKey(projectName, uuid);
-            if (self && pinnedObjects.contains(key))
-            {
-                return true;
-            }
-            if (recursiveExclusions.contains(key))
-            {
-                return false;
-            }
-            if (recursivePins.contains(key))
-            {
-                return true;
-            }
-            self = false;
-        }
-        return false;
+        return isEffectivelyPinned(uuidPath,
+            uuid -> pinnedObjects.contains(new PinnedObjectKey(projectName, uuid)),
+            uuid -> recursiveExclusions.contains(new PinnedObjectKey(projectName, uuid)),
+            uuid -> recursivePins.contains(new PinnedObjectKey(projectName, uuid)));
     }
 
     synchronized ProjectPinSnapshot getProjectPinSnapshot(String projectName)
