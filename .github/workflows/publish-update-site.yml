@@ -1,0 +1,136 @@
+name: Publish p2 update site
+
+on:
+  release:
+    types:
+      - published
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag to publish; latest release is used when empty
+        required: false
+        type: string
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: github-pages
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: Publish release to GitHub Pages
+    if: github.event_name != 'release' || !github.event.release.prerelease
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
+    steps:
+      - name: Resolve release
+        id: release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT_TAG: ${{ github.event.release.tag_name }}
+          INPUT_TAG: ${{ inputs.tag }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          tag="${EVENT_TAG:-${INPUT_TAG:-}}"
+          if [[ -z "$tag" ]]; then
+            tag="$(gh release view \
+              --repo "$GITHUB_REPOSITORY" \
+              --json tagName \
+              --jq '.tagName')"
+          fi
+
+          version="${tag#v}"
+          if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::Unsupported release tag: $tag"
+            exit 1
+          fi
+
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Download and verify stable releases
+        env:
+          GH_TOKEN: ${{ github.token }}
+          LATEST_VERSION: ${{ steps.release.outputs.version }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          mkdir -p release site/update
+          mapfile -t tags < <(
+            gh api --paginate \
+              "repos/$GITHUB_REPOSITORY/releases?per_page=100" \
+              --jq '.[] | select(.draft == false and .prerelease == false) | .tag_name'
+          )
+          if [[ "${#tags[@]}" -eq 0 ]]; then
+            echo "::error::No published stable releases found"
+            exit 1
+          fi
+
+          for tag in "${tags[@]}"; do
+            version="${tag#v}"
+            if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+              echo "::error::Unsupported release tag: $tag"
+              exit 1
+            fi
+
+            archive="edt-metadata-favorites-$version.zip"
+            release_dir="release/$version"
+            destination="site/update/$version"
+            mkdir -p "$release_dir" "$destination"
+
+            gh release download "$tag" \
+              --repo "$GITHUB_REPOSITORY" \
+              --dir "$release_dir" \
+              --pattern "$archive" \
+              --pattern SHA256SUMS.txt
+
+            (
+              cd "$release_dir"
+              tr -d '\015' < SHA256SUMS.txt |
+                grep -F "  $archive" |
+                sha256sum --check -
+            )
+
+            unzip -q "$release_dir/$archive" -d "$destination"
+            test -f "$destination/artifacts.jar"
+            test -f "$destination/content.jar"
+            test -d "$destination/features"
+            test -d "$destination/plugins"
+          done
+
+          latest_source="site/update/$LATEST_VERSION"
+          if [[ ! -d "$latest_source" ]]; then
+            echo "::error::Release selected as latest was not published: $LATEST_VERSION"
+            exit 1
+          fi
+          cp -a "$latest_source" site/update/latest
+          touch site/.nojekyll
+          printf '%s\n' \
+            '<!doctype html>' \
+            '<html lang="en">' \
+            '<head><meta charset="utf-8"><title>EDT Metadata Favorites</title></head>' \
+            '<body><a href="update/latest/">EDT Metadata Favorites update site</a></body>' \
+            '</html>' > site/index.html
+
+      - name: Configure GitHub Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload GitHub Pages artifact
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: site
+
+      - name: Deploy GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

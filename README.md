@@ -77,13 +77,16 @@ EDT Metadata Favorites позволяет один раз собрать объ�
 
 ## Установка
 
-После release-сборки добавьте полученный update-site ZIP в 1С:EDT:
+Добавьте опубликованный update site в 1С:EDT:
 
 1. Откройте `Help → Install New Software`.
-2. Добавьте архив
-   `.build/releases/<version>/edt-metadata-favorites-<version>.zip`.
+2. Добавьте адрес
+   `https://leobrn.github.io/edt-metadata-favorites/update/latest/`.
 3. Выберите `EDT Metadata Favorites` и завершите установку.
 4. Перезапустите 1С:EDT.
+
+Для установки без доступа к update site скачайте
+`edt-metadata-favorites-<version>.zip` из GitHub Release и добавьте его кнопкой `Archive`.
 
 ## Сборка release
 
