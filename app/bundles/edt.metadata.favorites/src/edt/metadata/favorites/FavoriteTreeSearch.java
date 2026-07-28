@@ -55,7 +55,7 @@ final class FavoriteTreeSearch
         boolean explicitFqnSearch = pattern.indexOf('.') >= 0;
         boolean objectMatches = node.isObject()
             && (node.normalizedLabel.contains(pattern)
-                || explicitFqnSearch && node.normalizedFqn.contains(pattern))
+                || explicitFqnSearch && fqnMatchesOwnPath(node, pattern))
             && (!onlySelected || selectedUuids.contains(node.target.uuid()));
         boolean subtreeMatches = objectMatches;
 
@@ -79,6 +79,34 @@ final class FavoriteTreeSearch
             accumulator.visibleNodes.add(node);
         }
         return subtreeMatches;
+    }
+
+    private static boolean fqnMatchesOwnPath(FavoriteTreeNode node, String pattern)
+    {
+        int inheritedFqnLength = 0;
+        for (FavoriteTreeNode parent = node.parent; parent != null; parent = parent.parent)
+        {
+            if (parent.isObject())
+            {
+                if (node.normalizedFqn.startsWith(parent.normalizedFqn))
+                {
+                    inheritedFqnLength = parent.normalizedFqn.length();
+                }
+                break;
+            }
+        }
+
+        int fromIndex = 0;
+        int matchIndex;
+        while ((matchIndex = node.normalizedFqn.indexOf(pattern, fromIndex)) >= 0)
+        {
+            if (matchIndex + pattern.length() > inheritedFqnLength)
+            {
+                return true;
+            }
+            fromIndex = matchIndex + 1;
+        }
+        return false;
     }
 
     private static final class Accumulator

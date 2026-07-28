@@ -483,7 +483,7 @@ public class FavoritesManagementDialog extends Dialog
             }
             if (item.getData() instanceof FavoriteTreeNode node)
             {
-                toggleFavorite(node);
+                toggleFavorite(node, item);
             }
         });
 
@@ -492,10 +492,11 @@ public class FavoritesManagementDialog extends Dialog
             {
                 return;
             }
-            Object selected = treeViewer.getStructuredSelection().getFirstElement();
-            if (selected instanceof FavoriteTreeNode node)
+            TreeItem[] selection = tree.getSelection();
+            if (selection.length > 0
+                && selection[0].getData() instanceof FavoriteTreeNode node)
             {
-                toggleFavorite(node);
+                toggleFavorite(node, selection[0]);
                 event.doit = false;
             }
         });
@@ -541,7 +542,7 @@ public class FavoritesManagementDialog extends Dialog
         return favoriteState(1, effectiveChecked(node) ? 1 : 0);
     }
 
-    private void toggleFavorite(FavoriteTreeNode node)
+    private void toggleFavorite(FavoriteTreeNode node, TreeItem item)
     {
         boolean changed;
         if (node.isGroup())
@@ -556,7 +557,7 @@ public class FavoritesManagementDialog extends Dialog
         }
         if (!changed)
         {
-            treeViewer.update(node, null);
+            updateFavoriteState(item);
             return;
         }
 
@@ -566,11 +567,11 @@ public class FavoritesManagementDialog extends Dialog
         {
             if (node.isGroup())
             {
-                updateVisibleFavoriteState(node);
+                updateMaterializedFavoriteState(item);
             }
             else
             {
-                treeViewer.update(node, null);
+                updateFavoriteState(item);
             }
             updateParentFavoriteStates(node);
             refreshAfterFavoriteStateChange();
@@ -597,10 +598,7 @@ public class FavoritesManagementDialog extends Dialog
         treeViewer.getControl().setRedraw(false);
         try
         {
-            for (FavoriteTreeNode root : currentRoots)
-            {
-                updateVisibleFavoriteState(root);
-            }
+            updateMaterializedFavoriteState();
             refreshAfterFavoriteStateChange();
         }
         finally
@@ -660,12 +658,30 @@ public class FavoritesManagementDialog extends Dialog
         return result;
     }
 
-    private void updateVisibleFavoriteState(FavoriteTreeNode node)
+    private void updateMaterializedFavoriteState()
     {
-        treeViewer.update(node, null);
-        if (treeViewer.getExpandedState(node))
+        for (TreeItem item : treeViewer.getTree().getItems())
         {
-            node.children.forEach(this::updateVisibleFavoriteState);
+            updateMaterializedFavoriteState(item);
+        }
+    }
+
+    private void updateMaterializedFavoriteState(TreeItem item)
+    {
+        updateFavoriteState(item);
+        for (TreeItem child : item.getItems())
+        {
+            updateMaterializedFavoriteState(child);
+        }
+    }
+
+    private void updateFavoriteState(TreeItem item)
+    {
+        if (item.getData() instanceof FavoriteTreeNode node)
+        {
+            FavoriteState state = favoriteState(node);
+            item.setChecked(state != FavoriteState.NONE);
+            item.setGrayed(state == FavoriteState.PARTIAL);
         }
     }
 

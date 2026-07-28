@@ -95,6 +95,28 @@ public class FavoriteTreeSearchTest
     }
 
     @Test
+    public void fqnMatchInParentDoesNotTurnNestedObjectsIntoMatches()
+    {
+        FavoriteTreeNode root = FavoriteTreeNode.group("Справочники");
+        FavoriteTreeNode catalog = object("Контрагенты", "catalog", "Catalog.Контрагенты");
+        FavoriteTreeNode forms = FavoriteTreeNode.group("Формы");
+        FavoriteTreeNode form =
+            object("Основная", "form", "Catalog.Контрагенты.Form.Основная");
+        root.addChild(catalog);
+        catalog.addChild(forms);
+        forms.addChild(form);
+
+        FavoriteTreeSearch.Result result = FavoriteTreeSearch.compute(List.of(root),
+            "catalog.контрагенты", false, Set.of(), () -> false);
+
+        assertTrue(result.visibleNodes().contains(catalog));
+        assertFalse(result.visibleNodes().contains(forms));
+        assertFalse(result.visibleNodes().contains(form));
+        assertEquals(Set.of(catalog), result.matchingObjectNodes());
+        assertEquals(1, result.matchingObjects());
+    }
+
+    @Test
     public void countsAllMatchesWithoutTruncatingVisibleResults()
     {
         FavoriteTreeNode root = FavoriteTreeNode.group("Объекты");
