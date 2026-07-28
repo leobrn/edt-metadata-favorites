@@ -24,6 +24,7 @@ import org.eclipse.core.runtime.IPath;
 
 
 public class PinStore
+    implements FavoritesQuery
 {
     private static final String FILE_NAME = "pinned.yaml";
 
@@ -111,7 +112,14 @@ public class PinStore
         return modCount;
     }
 
+    @Override
+    public synchronized long getRevision()
+    {
+        return modCount;
+    }
 
+
+    @Override
     public synchronized boolean isProjectPinned(String projectName)
     {
         if (!ensureLoaded())
@@ -156,6 +164,7 @@ public class PinStore
 
 
 
+    @Override
     public synchronized boolean hasPinnedObjects(String projectName)
     {
         if (!ensureLoaded())
@@ -177,6 +186,7 @@ public class PinStore
     }
 
 
+    @Override
     public synchronized boolean isObjectEffectivelyPinned(String projectName, Iterable<String> uuidPath)
     {
         if (!ensureLoaded())

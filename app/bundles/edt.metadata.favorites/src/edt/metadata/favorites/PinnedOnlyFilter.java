@@ -6,6 +6,7 @@ package edt.metadata.favorites;
 import java.util.HashMap;
 import java.util.IdentityHashMap;
 import java.util.Map;
+import java.util.Objects;
 
 import org.eclipse.jface.viewers.AbstractTreeViewer;
 import org.eclipse.jface.viewers.ITreeContentProvider;
@@ -29,41 +30,53 @@ public class PinnedOnlyFilter extends ViewerFilter
     private final Map<String, Boolean> hasPinnedObjectsCache = new HashMap<>();
 
 
-    private int cachedModCount = -1;
+    private long cachedRevision = Long.MIN_VALUE;
+
+
+    private final FavoritesQuery favorites;
+
+    public PinnedOnlyFilter()
+    {
+        this(Activator.getDefault().getPinStore());
+    }
+
+    PinnedOnlyFilter(FavoritesQuery favorites)
+    {
+        this.favorites = Objects.requireNonNull(favorites);
+    }
 
     @Override
     public boolean select(Viewer viewer, Object parentElement, Object element)
     {
-        PinStore store = Activator.getDefault().getPinStore();
-        syncModCount(store);
+        syncRevision();
 
         String projectName = MetadataPinSupport.getProjectName(element);
         if (MetadataPinSupport.isProjectNode(element))
         {
-            if (projectName != null && store.isProjectPinned(projectName))
+            if (projectName != null && favorites.isProjectPinned(projectName))
             {
                 return true;
             }
-            if (projectName != null && !hasPinnedObjects(store, projectName))
+            if (projectName != null && !hasPinnedObjects(projectName))
             {
                 return false;
             }
         }
         else
         {
-            if (projectName != null && store.isProjectPinned(projectName)
-                && !hasPinnedObjects(store, projectName))
+            if (projectName != null && favorites.isProjectPinned(projectName)
+                && !hasPinnedObjects(projectName))
             {
                 return true;
             }
-            if (projectName != null && !hasPinnedObjects(store, projectName))
+            if (projectName != null && !hasPinnedObjects(projectName))
             {
                 return false;
             }
 
             String uuid = MetadataPinSupport.getUuid(element);
             if (uuid != null && projectName != null
-                && store.isObjectEffectivelyPinned(projectName, MetadataPinSupport.getUuidPath(element)))
+                && favorites.isObjectEffectivelyPinned(projectName, MetadataPinSupport.getUuidPath(element)))
             {
                 return true;
             }
@@ -78,24 +91,24 @@ public class PinnedOnlyFilter extends ViewerFilter
     }
 
 
-    private void syncModCount(PinStore store)
+    private void syncRevision()
     {
-        int currentModCount = store.getModCount();
-        if (currentModCount != cachedModCount)
+        long revision = favorites.getRevision();
+        if (revision != cachedRevision)
         {
-            cachedModCount = currentModCount;
+            cachedRevision = revision;
             hasPinnedObjectsCache.clear();
             descendantCache.clear();
         }
     }
 
 
-    private boolean hasPinnedObjects(PinStore store, String projectName)
+    private boolean hasPinnedObjects(String projectName)
     {
         Boolean value = hasPinnedObjectsCache.get(projectName);
         if (value == null)
         {
-            value = store.hasPinnedObjects(projectName);
+            value = favorites.hasPinnedObjects(projectName);
             hasPinnedObjectsCache.put(projectName, value);
         }
         return value;
@@ -161,35 +174,34 @@ public class PinnedOnlyFilter extends ViewerFilter
             return false;
         }
 
-        PinStore store = Activator.getDefault().getPinStore();
         for (Object child : children)
         {
             String childProject = MetadataPinSupport.getProjectName(child);
             if (MetadataPinSupport.isProjectNode(child) && childProject != null
-                && store.isProjectPinned(childProject))
+                && favorites.isProjectPinned(childProject))
             {
                 return true;
             }
             if (MetadataPinSupport.isProjectNode(child) && childProject != null
-                && !hasPinnedObjects(store, childProject))
+                && !hasPinnedObjects(childProject))
             {
                 continue;
             }
 
             if (!MetadataPinSupport.isProjectNode(child) && childProject != null
-                && store.isProjectPinned(childProject) && !hasPinnedObjects(store, childProject))
+                && favorites.isProjectPinned(childProject) && !hasPinnedObjects(childProject))
             {
                 return true;
             }
             if (!MetadataPinSupport.isProjectNode(child) && childProject != null
-                && !hasPinnedObjects(store, childProject))
+                && !hasPinnedObjects(childProject))
             {
                 continue;
             }
 
             String childUuid = MetadataPinSupport.getUuid(child);
             if (childUuid != null && childProject != null
-                && store.isObjectEffectivelyPinned(childProject, MetadataPinSupport.getUuidPath(child)))
+                && favorites.isObjectEffectivelyPinned(childProject, MetadataPinSupport.getUuidPath(child)))
             {
                 return true;
             }
