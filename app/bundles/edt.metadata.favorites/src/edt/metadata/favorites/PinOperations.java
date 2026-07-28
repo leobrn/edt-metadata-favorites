@@ -121,7 +121,7 @@ public final class PinOperations
         IWorkbenchWindow window = PlatformUI.getWorkbench().getActiveWorkbenchWindow();
         EditorPinToggleHandler.refreshElements(window);
         CommonNavigator navigator = findNavigator();
-        if (navigator != null)
+        if (navigator != null && isPinnedFilterActive(navigator.getCommonViewer()))
         {
             CommonViewer viewer = navigator.getCommonViewer();
             Object[] expandedElements = viewer.getExpandedElements();

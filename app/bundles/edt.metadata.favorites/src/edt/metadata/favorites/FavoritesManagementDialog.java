@@ -103,6 +103,10 @@ public class FavoritesManagementDialog extends Dialog
 
     private String projectStatusMessage = "";
 
+    private Button selectAllButton;
+
+    private Button deselectAllButton;
+
     private TreeViewer treeViewer;
 
     private final TreeVisibilityFilter visibilityFilter = new TreeVisibilityFilter();
@@ -229,6 +233,7 @@ public class FavoritesManagementDialog extends Dialog
             }
         };
         searchText.getDisplay().timerExec(SEARCH_DELAY_MS, pendingSearch);
+        updateSearchUiState();
     }
 
     private void cancelPendingSearch()
@@ -247,13 +252,12 @@ public class FavoritesManagementDialog extends Dialog
         {
             return;
         }
-        String normalizedPattern = pattern == null ? "" : pattern.trim().toLowerCase(Locale.ROOT);
-        String effectivePattern =
-            normalizedPattern.length() >= MIN_SEARCH_PATTERN_LENGTH ? normalizedPattern : "";
+        String normalizedPattern = normalizeSearchPattern(pattern);
+        String effectivePattern = effectiveSearchPattern(normalizedPattern);
         boolean hasPattern = !effectivePattern.isEmpty();
         if (!hasPattern && !searchActive)
         {
-            showSearchStatus(normalizedPattern);
+            updateSearchUiState();
             return;
         }
 
@@ -280,7 +284,7 @@ public class FavoritesManagementDialog extends Dialog
             {
                 treeViewer.getControl().setRedraw(true);
             }
-            showSearchStatus(normalizedPattern);
+            updateSearchUiState();
             return;
         }
 
@@ -312,6 +316,7 @@ public class FavoritesManagementDialog extends Dialog
         };
         searchJob.setSystem(true);
         searchJob.schedule();
+        updateSearchUiState();
     }
 
     private void applySearchResult(int generation, String projectName, List<FavoriteTreeNode> roots,
@@ -342,7 +347,7 @@ public class FavoritesManagementDialog extends Dialog
         {
             treeViewer.getControl().setRedraw(true);
         }
-        setStatusMessage("Найдено объектов: " + result.matchingObjects());
+        updateSearchUiState();
     }
 
     private void cancelSearchJob()
@@ -351,18 +356,6 @@ public class FavoritesManagementDialog extends Dialog
         {
             searchJob.cancel();
             searchJob = null;
-        }
-    }
-
-    private void showSearchStatus(String normalizedPattern)
-    {
-        if (!normalizedPattern.isEmpty() && normalizedPattern.length() < MIN_SEARCH_PATTERN_LENGTH)
-        {
-            setStatusMessage("Введите не менее " + MIN_SEARCH_PATTERN_LENGTH + " символов для поиска.");
-        }
-        else
-        {
-            setStatusMessage(projectStatusMessage);
         }
     }
 
@@ -412,13 +405,13 @@ public class FavoritesManagementDialog extends Dialog
                 {
                     refreshSelectedVisibility();
                 }
+                updateSearchUiState();
             }
         });
 
-        Button selectAll = new Button(row, SWT.PUSH);
-        selectAll.setText("Выбрать все");
-        selectAll.setToolTipText("Отметить все объекты текущего проекта");
-        selectAll.addSelectionListener(new SelectionAdapter()
+        selectAllButton = new Button(row, SWT.PUSH);
+        selectAllButton.setText("Выбрать все");
+        selectAllButton.addSelectionListener(new SelectionAdapter()
         {
             @Override
             public void widgetSelected(SelectionEvent e)
@@ -427,10 +420,9 @@ public class FavoritesManagementDialog extends Dialog
             }
         });
 
-        Button deselectAll = new Button(row, SWT.PUSH);
-        deselectAll.setText("Снять все");
-        deselectAll.setToolTipText("Снять отметку со всех объектов текущего проекта");
-        deselectAll.addSelectionListener(new SelectionAdapter()
+        deselectAllButton = new Button(row, SWT.PUSH);
+        deselectAllButton.setText("Снять все");
+        deselectAllButton.addSelectionListener(new SelectionAdapter()
         {
             @Override
             public void widgetSelected(SelectionEvent e)
@@ -438,6 +430,7 @@ public class FavoritesManagementDialog extends Dialog
                 setAllChecked(false);
             }
         });
+        updateSearchUiState();
     }
 
 
@@ -452,7 +445,7 @@ public class FavoritesManagementDialog extends Dialog
         treeViewer = new TreeViewer(parent, SWT.BORDER | SWT.FULL_SELECTION | SWT.CHECK);
         treeViewer.setUseHashlookup(true);
         Tree tree = treeViewer.getTree();
-        tree.setHeaderVisible(true);
+        tree.setHeaderVisible(false);
         GridData data = new GridData(SWT.FILL, SWT.FILL, true, true);
         data.heightHint = 260;
         treeViewer.getControl().setLayoutData(data);
@@ -460,7 +453,6 @@ public class FavoritesManagementDialog extends Dialog
         navigatorLabelProvider = createNavigatorLabelProvider();
 
         TreeViewerColumn nameColumn = new TreeViewerColumn(treeViewer, SWT.NONE);
-        nameColumn.getColumn().setText("Объект метаданных");
         nameColumn.getColumn().setWidth(390);
         favoriteTreeLabelProvider = new FavoriteTreeLabelProvider(navigatorLabelProvider);
         favoriteTreeLabelProvider.setOwnerDrawEnabled(false);
@@ -594,7 +586,9 @@ public class FavoritesManagementDialog extends Dialog
         boolean changed = false;
         for (FavoriteTreeNode group : currentRoots)
         {
-            changed |= setSubtreeChecked(group, checked);
+            changed |= visibilityFilter.isFiltered()
+                ? setVisibleSubtreeChecked(group, checked)
+                : setSubtreeChecked(group, checked);
         }
         if (!changed)
         {
@@ -613,6 +607,22 @@ public class FavoritesManagementDialog extends Dialog
         {
             treeViewer.getControl().setRedraw(true);
         }
+    }
+
+    private boolean setVisibleSubtreeChecked(FavoriteTreeNode node, boolean checked)
+    {
+        if (!visibilityFilter.matchesSubtree(node))
+        {
+            return false;
+        }
+        boolean changed =
+            visibilityFilter.matchesObject(node) && recordChange(node, checked);
+        for (FavoriteTreeNode child : node.children)
+        {
+            changed |= setVisibleSubtreeChecked(child, checked);
+        }
+        recomputeCheckSummary(node);
+        return changed;
     }
 
     private boolean setSubtreeChecked(FavoriteTreeNode node, boolean checked)
@@ -745,7 +755,6 @@ public class FavoritesManagementDialog extends Dialog
         searchActive = false;
         setSearchHighlighting(false);
         projectStatusMessage = statusMessageFor(buildResult);
-        setStatusMessage(projectStatusMessage);
         treeViewer.setInput(currentRoots);
 
         String pattern = searchText == null ? "" : searchText.getText();
@@ -757,6 +766,7 @@ public class FavoritesManagementDialog extends Dialog
         {
             setExpandedMatchingElements();
         }
+        updateSearchUiState();
     }
 
 
@@ -871,6 +881,136 @@ public class FavoritesManagementDialog extends Dialog
         return result;
     }
 
+    static String searchHighlightPattern(String pattern)
+    {
+        int separator = pattern.lastIndexOf('.');
+        return separator < 0 ? pattern : pattern.substring(separator + 1);
+    }
+
+    private static String normalizeSearchPattern(String pattern)
+    {
+        return pattern == null ? "" : pattern.trim().toLowerCase(Locale.ROOT);
+    }
+
+    private static String effectiveSearchPattern(String normalizedPattern)
+    {
+        return normalizedPattern.length() >= MIN_SEARCH_PATTERN_LENGTH ? normalizedPattern : "";
+    }
+
+    static boolean searchViewUpdating(String requestedPattern, String appliedPattern,
+        boolean searchPending, boolean searchRunning)
+    {
+        if (searchRunning)
+        {
+            return true;
+        }
+        if (!searchPending)
+        {
+            return false;
+        }
+        String effectivePattern =
+            effectiveSearchPattern(normalizeSearchPattern(requestedPattern));
+        return !effectivePattern.equals(appliedPattern);
+    }
+
+    private boolean searchViewUpdating()
+    {
+        String requestedPattern = searchText == null ? "" : searchText.getText();
+        return searchViewUpdating(requestedPattern, visibilityFilter.pattern(),
+            pendingSearch != null, searchJob != null);
+    }
+
+    record BulkActionState(boolean selectAllEnabled, boolean deselectAllEnabled)
+    {
+    }
+
+    static BulkActionState bulkActionState(boolean searchUpdating, boolean onlySelected)
+    {
+        return new BulkActionState(!searchUpdating && !onlySelected, !searchUpdating);
+    }
+
+    static String searchStatusMessage(String requestedPattern, String appliedPattern,
+        int matchingObjects, String projectMessage, boolean searchUpdating)
+    {
+        if (searchUpdating)
+        {
+            return "Поиск\u2026";
+        }
+        String normalizedPattern = normalizeSearchPattern(requestedPattern);
+        if (!normalizedPattern.isEmpty()
+            && normalizedPattern.length() < MIN_SEARCH_PATTERN_LENGTH)
+        {
+            return "Введите не менее " + MIN_SEARCH_PATTERN_LENGTH + " символов для поиска.";
+        }
+        if (!appliedPattern.isEmpty())
+        {
+            return "Найдено объектов: " + matchingObjects;
+        }
+        return projectMessage == null ? "" : projectMessage;
+    }
+
+    private void updateSearchUiState()
+    {
+        updateBulkActionState();
+        updateSearchStatus();
+    }
+
+    private void updateSearchStatus()
+    {
+        if (statusLabel == null || statusLabel.isDisposed())
+        {
+            return;
+        }
+        String requestedPattern = searchText == null ? "" : searchText.getText();
+        String message = searchStatusMessage(requestedPattern, visibilityFilter.pattern(),
+            visibilityFilter.matchingObjectCount(), projectStatusMessage, searchViewUpdating());
+        if (!message.equals(statusLabel.getText()))
+        {
+            setStatusMessage(message);
+        }
+    }
+
+    private void updateBulkActionState()
+    {
+        if (selectAllButton == null || selectAllButton.isDisposed()
+            || deselectAllButton == null || deselectAllButton.isDisposed())
+        {
+            return;
+        }
+
+        boolean searchUpdating = searchViewUpdating();
+        boolean onlySelected = visibilityFilter.isOnlySelected();
+        BulkActionState state = bulkActionState(searchUpdating, onlySelected);
+        selectAllButton.setEnabled(state.selectAllEnabled());
+        deselectAllButton.setEnabled(state.deselectAllEnabled());
+
+        if (searchUpdating)
+        {
+            selectAllButton.setToolTipText("Дождитесь завершения поиска");
+            deselectAllButton.setToolTipText("Дождитесь завершения поиска");
+            return;
+        }
+
+        boolean searchApplied = !visibilityFilter.pattern().isEmpty();
+        if (onlySelected)
+        {
+            selectAllButton.setToolTipText("Все объекты текущего отбора уже выбраны");
+            deselectAllButton.setToolTipText(searchApplied
+                ? "Снять отметки со всех найденных выбранных объектов"
+                : "Снять отметки со всех выбранных объектов, показанных в форме");
+        }
+        else if (searchApplied)
+        {
+            selectAllButton.setToolTipText("Отметить все найденные объекты");
+            deselectAllButton.setToolTipText("Снять отметки со всех найденных объектов");
+        }
+        else
+        {
+            selectAllButton.setToolTipText("Отметить все объекты текущего проекта");
+            deselectAllButton.setToolTipText("Снять отметки со всех объектов текущего проекта");
+        }
+    }
+
     private Set<String> checkedUuids(String projectName)
     {
         return checkedByProject.getOrDefault(projectName, Set.of());
@@ -933,6 +1073,10 @@ public class FavoritesManagementDialog extends Dialog
 
     private void applyPendingChanges()
     {
+        if (pendingByProject.isEmpty())
+        {
+            return;
+        }
         PinStore store = Activator.getDefault().getPinStore();
         for (Map.Entry<String, Map<String, PendingChange>> projectEntry : pendingByProject.entrySet())
         {
@@ -1066,7 +1210,8 @@ public class FavoritesManagementDialog extends Dialog
             }
             cell.setText(node.label);
             cell.setImage(imageFor(node));
-            cell.setStyleRanges(highlightRanges(node.normalizedLabel, visibilityFilter.pattern()));
+            cell.setStyleRanges(highlightRanges(node.normalizedLabel,
+                searchHighlightPattern(visibilityFilter.pattern())));
             if (cell.getItem() instanceof TreeItem item)
             {
                 FavoriteState state = favoriteState(node);
@@ -1131,16 +1276,24 @@ public class FavoritesManagementDialog extends Dialog
 
         private Set<FavoriteTreeNode> searchVisibleNodes = Set.of();
 
+        private Set<FavoriteTreeNode> searchMatchingObjectNodes = Set.of();
+
+        private int matchingObjectCount;
+
         void applySearch(String value, FavoriteTreeSearch.Result result)
         {
             pattern = value;
             searchVisibleNodes = result.visibleNodes();
+            searchMatchingObjectNodes = result.matchingObjectNodes();
+            matchingObjectCount = result.matchingObjects();
         }
 
         void clearSearch()
         {
             pattern = "";
             searchVisibleNodes = Set.of();
+            searchMatchingObjectNodes = Set.of();
+            matchingObjectCount = 0;
         }
 
         void setOnlySelected(boolean value)
@@ -1156,6 +1309,29 @@ public class FavoritesManagementDialog extends Dialog
         String pattern()
         {
             return pattern;
+        }
+
+        int matchingObjectCount()
+        {
+            return matchingObjectCount;
+        }
+
+        boolean isFiltered()
+        {
+            return onlySelected || !pattern.isEmpty();
+        }
+
+        boolean matchesObject(FavoriteTreeNode node)
+        {
+            if (!node.isObject())
+            {
+                return false;
+            }
+            if (!pattern.isEmpty())
+            {
+                return searchMatchingObjectNodes.contains(node);
+            }
+            return !onlySelected || effectiveChecked(node);
         }
 
         @Override

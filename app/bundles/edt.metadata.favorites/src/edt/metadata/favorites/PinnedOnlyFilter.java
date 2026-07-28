@@ -44,6 +44,10 @@ public class PinnedOnlyFilter extends ViewerFilter
             {
                 return true;
             }
+            if (projectName != null && !hasPinnedObjects(store, projectName))
+            {
+                return false;
+            }
         }
         else
         {
@@ -51,6 +55,10 @@ public class PinnedOnlyFilter extends ViewerFilter
                 && !hasPinnedObjects(store, projectName))
             {
                 return true;
+            }
+            if (projectName != null && !hasPinnedObjects(store, projectName))
+            {
+                return false;
             }
 
             String uuid = MetadataPinSupport.getUuid(element);
@@ -162,11 +170,21 @@ public class PinnedOnlyFilter extends ViewerFilter
             {
                 return true;
             }
+            if (MetadataPinSupport.isProjectNode(child) && childProject != null
+                && !hasPinnedObjects(store, childProject))
+            {
+                continue;
+            }
 
             if (!MetadataPinSupport.isProjectNode(child) && childProject != null
                 && store.isProjectPinned(childProject) && !hasPinnedObjects(store, childProject))
             {
                 return true;
+            }
+            if (!MetadataPinSupport.isProjectNode(child) && childProject != null
+                && !hasPinnedObjects(store, childProject))
+            {
+                continue;
             }
 
             String childUuid = MetadataPinSupport.getUuid(child);

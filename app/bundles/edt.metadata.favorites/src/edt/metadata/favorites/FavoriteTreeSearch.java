@@ -18,7 +18,8 @@ final class FavoriteTreeSearch
     {
     }
 
-    record Result(Set<FavoriteTreeNode> visibleNodes, int matchingObjects)
+    record Result(Set<FavoriteTreeNode> visibleNodes,
+        Set<FavoriteTreeNode> matchingObjectNodes, int matchingObjects)
     {
     }
 
@@ -39,7 +40,8 @@ final class FavoriteTreeSearch
             }
         }
         return canceled.getAsBoolean() ? null
-            : new Result(accumulator.visibleNodes, accumulator.matchingObjects);
+            : new Result(accumulator.visibleNodes, accumulator.matchingObjectNodes,
+                accumulator.matchingObjects);
     }
 
     private static boolean collect(FavoriteTreeNode node, String pattern, boolean onlySelected,
@@ -59,6 +61,7 @@ final class FavoriteTreeSearch
 
         if (objectMatches)
         {
+            accumulator.matchingObjectNodes.add(node);
             accumulator.matchingObjects++;
         }
 
@@ -81,6 +84,9 @@ final class FavoriteTreeSearch
     private static final class Accumulator
     {
         private final Set<FavoriteTreeNode> visibleNodes =
+            Collections.newSetFromMap(new IdentityHashMap<>());
+
+        private final Set<FavoriteTreeNode> matchingObjectNodes =
             Collections.newSetFromMap(new IdentityHashMap<>());
 
         private final BooleanSupplier canceled;

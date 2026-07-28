@@ -4,6 +4,7 @@
 package edt.metadata.favorites;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
 import java.lang.reflect.Field;
@@ -122,6 +123,55 @@ public class FavoritesManagementDialogStructureTest
 
         assertEquals(List.of("form", "catalog", "configuration"),
             FavoritesManagementDialog.uuidPath(form, "configuration"));
+    }
+
+    @Test
+    public void fqnSearchHighlightsLastSegmentInObjectLabel()
+    {
+        assertEquals("контр",
+            FavoritesManagementDialog.searchHighlightPattern("catalogs.контр"));
+        assertEquals("контр",
+            FavoritesManagementDialog.searchHighlightPattern("контр"));
+    }
+
+    @Test
+    public void bulkActionsWaitUntilChangedSearchIsApplied()
+    {
+        assertFalse(FavoritesManagementDialog.searchViewUpdating("ко", "", true, false));
+        assertTrue(FavoritesManagementDialog.searchViewUpdating("контр", "", true, false));
+        assertTrue(FavoritesManagementDialog.searchViewUpdating("", "контр", true, false));
+        assertFalse(FavoritesManagementDialog.searchViewUpdating(
+            "контр", "контр", true, false));
+        assertTrue(FavoritesManagementDialog.searchViewUpdating("контр", "контр", false, true));
+    }
+
+    @Test
+    public void selectAllIsDisabledForOnlySelectedMode()
+    {
+        assertEquals(new FavoritesManagementDialog.BulkActionState(true, true),
+            FavoritesManagementDialog.bulkActionState(false, false));
+        assertEquals(new FavoritesManagementDialog.BulkActionState(false, true),
+            FavoritesManagementDialog.bulkActionState(false, true));
+        assertEquals(new FavoritesManagementDialog.BulkActionState(false, false),
+            FavoritesManagementDialog.bulkActionState(true, false));
+        assertEquals(new FavoritesManagementDialog.BulkActionState(false, false),
+            FavoritesManagementDialog.bulkActionState(true, true));
+    }
+
+    @Test
+    public void searchStatusIsDerivedFromCurrentSearchState()
+    {
+        assertEquals("Поиск\u2026",
+            FavoritesManagementDialog.searchStatusMessage("контр", "", 0, "", true));
+        assertEquals("",
+            FavoritesManagementDialog.searchStatusMessage("", "", 0, "", false));
+        assertEquals("Введите не менее 3 символов для поиска.",
+            FavoritesManagementDialog.searchStatusMessage("ко", "", 0, "", false));
+        assertEquals("Найдено объектов: 7",
+            FavoritesManagementDialog.searchStatusMessage("контр", "контр", 7, "", false));
+        assertEquals("Конфигурация недоступна",
+            FavoritesManagementDialog.searchStatusMessage(
+                "", "", 0, "Конфигурация недоступна", false));
     }
 
     @Test

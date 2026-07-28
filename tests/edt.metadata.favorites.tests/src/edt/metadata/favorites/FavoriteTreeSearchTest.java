@@ -33,6 +33,7 @@ public class FavoriteTreeSearchTest
         assertTrue(result.visibleNodes().contains(root));
         assertTrue(result.visibleNodes().contains(match));
         assertFalse(result.visibleNodes().contains(other));
+        assertEquals(Set.of(match), result.matchingObjectNodes());
         assertEquals(1, result.matchingObjects());
     }
 
@@ -89,6 +90,7 @@ public class FavoriteTreeSearchTest
 
         assertTrue(result.visibleNodes().contains(catalog));
         assertTrue(result.visibleNodes().contains(form));
+        assertEquals(Set.of(form), result.matchingObjectNodes());
         assertEquals(1, result.matchingObjects());
     }
 
