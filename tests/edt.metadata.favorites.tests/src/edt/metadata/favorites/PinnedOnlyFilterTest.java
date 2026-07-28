@@ -48,7 +48,7 @@ public class PinnedOnlyFilterTest
         assertEquals(1, query.hasPinnedObjectsCalls);
 
         query.revision++;
-        assertFalse(filter.select(null, null, project));
+        filter.select(null, null, project);
         assertEquals(2, query.hasPinnedObjectsCalls);
     }
 

@@ -13,6 +13,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import org.junit.Rule;
 import org.junit.Test;
@@ -37,6 +38,24 @@ public class PinStoreTest
         assertTrue(loaded.isObjectPinned("SM", "uuid-1"));
         assertEquals(List.of(target), loaded.getPinnedObjects("SM"));
         assertTrue(Files.readString(storageFile(), StandardCharsets.UTF_8).startsWith("formatVersion: 2"));
+    }
+
+    @Test
+    public void revisionChangesOnlyWhenStateChanges() throws Exception
+    {
+        PinStore store = newStore();
+        assertFalse(store.isProjectPinned("SM"));
+        long initialRevision = store.getRevision();
+
+        store.pinProject("SM");
+        long changedRevision = store.getRevision();
+        assertTrue(changedRevision > initialRevision);
+
+        store.pinProject("SM");
+        assertEquals(changedRevision, store.getRevision());
+
+        store.unpinProject("SM");
+        assertTrue(store.getRevision() > changedRevision);
     }
 
     @Test
@@ -68,6 +87,24 @@ public class PinStoreTest
     }
 
     @Test
+    public void bulkUnpinCreatesPersistedExclusionsInsideRecursiveBranch() throws Exception
+    {
+        PinTarget root = new PinTarget("root", "Catalog.Товары");
+        PinTarget first = new PinTarget("first", "Catalog.Товары.Form.Первая");
+        PinTarget second = new PinTarget("second", "Catalog.Товары.Form.Вторая");
+        PinStore store = newStore();
+        store.pinBranch("SM", root, List.of(root, first, second));
+
+        store.unpinObjects("SM", List.of(first, second));
+
+        PinStore loaded = newStore();
+        assertTrue(loaded.isRecursivePin("SM", "root"));
+        assertFalse(loaded.isObjectEffectivelyPinned("SM", List.of("first", "root")));
+        assertFalse(loaded.isObjectEffectivelyPinned("SM", List.of("second", "root")));
+        assertTrue(loaded.isObjectEffectivelyPinned("SM", List.of("future", "root")));
+    }
+
+    @Test
     public void recursivePinIncludesFutureDescendantsAndPersists() throws Exception
     {
         PinTarget root = new PinTarget("root", "Catalog.Товары");
@@ -81,23 +118,6 @@ public class PinStoreTest
         assertTrue(loaded.isObjectEffectivelyPinned("SM", List.of("root")));
         assertTrue(loaded.isObjectEffectivelyPinned("SM", List.of("form", "root")));
         assertTrue(loaded.isObjectEffectivelyPinned("SM", List.of("new-form", "root")));
-    }
-
-    @Test
-    public void projectSnapshotMatchesEffectivePinRules() throws Exception
-    {
-        PinTarget root = new PinTarget("root", "Catalog.Товары");
-        PinTarget form = new PinTarget("form", "Catalog.Товары.Form.Основная");
-        PinStore store = newStore();
-        store.pinBranch("SM", root, List.of(root, form));
-        store.unpinObject("SM", "excluded");
-
-        PinStore.ProjectPinSnapshot snapshot = store.getProjectPinSnapshot("SM");
-
-        assertTrue(snapshot.isEffectivelyPinned(List.of("form", "root")));
-        assertTrue(snapshot.isEffectivelyPinned(List.of("new-form", "root")));
-        assertFalse(snapshot.isEffectivelyPinned(List.of("excluded", "root")));
-        assertFalse(snapshot.isEffectivelyPinned(List.of("unrelated")));
     }
 
     @Test
@@ -122,6 +142,20 @@ public class PinStoreTest
             List.of("nested-excluded", "nested-root", "root"), false);
         assertEffectivePinParity(store, snapshot, List.of(), false);
         assertEffectivePinParity(store, snapshot, List.of("unrelated"), false);
+    }
+
+    @Test
+    public void effectivePinMapsEachVisitedUuidOnce()
+    {
+        AtomicInteger mappedUuids = new AtomicInteger();
+
+        boolean result = PinStore.isEffectivelyPinned(List.of("child", "root"), uuid -> {
+            mappedUuids.incrementAndGet();
+            return uuid;
+        }, uuid -> false, uuid -> false, "root"::equals);
+
+        assertTrue(result);
+        assertEquals(2, mappedUuids.get());
     }
 
     @Test
@@ -310,6 +344,24 @@ public class PinStoreTest
         store.pinProject("NEW");
 
         assertEquals(futureFile, Files.readString(storageFile(), StandardCharsets.UTF_8));
+    }
+
+    @Test
+    public void malformedFormatVersionIsNotReadOrOverwritten() throws Exception
+    {
+        String malformedFile = """
+            formatVersion: invalid
+            pinnedProjects:
+              - "SM"
+            pinnedObjects:
+            """;
+        Files.writeString(storageFile(), malformedFile, StandardCharsets.UTF_8);
+
+        PinStore store = newStore();
+        assertFalse(store.isProjectPinned("SM"));
+        store.pinProject("NEW");
+
+        assertEquals(malformedFile, Files.readString(storageFile(), StandardCharsets.UTF_8));
     }
 
     private PinStore newStore() throws Exception

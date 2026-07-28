@@ -91,22 +91,36 @@ Copy-Item -LiteralPath $bundleJar.FullName -Destination $bundlePath
 Copy-Item -LiteralPath $repositoryZip.FullName -Destination $updateSitePath
 
 $changelogLines = Get-Content -LiteralPath $changelog -Encoding UTF8
-$unreleasedStart = -1
+$changesStart = -1
+$changesSection = '[Unreleased]'
+$versionHeading = "## [$version]"
 for ($index = 0; $index -lt $changelogLines.Count; $index++)
 {
     if ($changelogLines[$index] -match '^## \[Unreleased\]\s*$')
     {
-        $unreleasedStart = $index + 1
+        $changesStart = $index + 1
         break
     }
 }
-if ($unreleasedStart -lt 0)
+if ($changesStart -lt 0)
 {
-    throw "В $changelog не найдена секция '## [Unreleased]'."
+    for ($index = 0; $index -lt $changelogLines.Count; $index++)
+    {
+        if ($changelogLines[$index] -eq $versionHeading)
+        {
+            $changesStart = $index + 1
+            $changesSection = "[$version]"
+            break
+        }
+    }
+}
+if ($changesStart -lt 0)
+{
+    throw "В $changelog не найдены секции '## [Unreleased]' и '$versionHeading'."
 }
 
 $changes = [Collections.Generic.List[string]]::new()
-for ($index = $unreleasedStart; $index -lt $changelogLines.Count; $index++)
+for ($index = $changesStart; $index -lt $changelogLines.Count; $index++)
 {
     if ($changelogLines[$index] -match '^## \[')
     {
@@ -124,7 +138,7 @@ while ($changes.Count -gt 0 -and [string]::IsNullOrWhiteSpace($changes[$changes.
 }
 if ($changes.Count -eq 0)
 {
-    throw "Секция Unreleased в $changelog пуста."
+    throw "Секция $changesSection в $changelog пуста."
 }
 
 $releaseNotes = @(

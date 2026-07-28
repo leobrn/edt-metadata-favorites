@@ -3,7 +3,7 @@ Bundle-ManifestVersion: 2
 Bundle-Name: %pluginName
 Bundle-Vendor: %providerName
 Bundle-License: MIT; link="https://opensource.org/licenses/MIT"
-Bundle-Version: 1.2.0.qualifier
+Bundle-Version: 1.2.0
 Bundle-SymbolicName: edt.metadata.favorites;singleton:=true
 Bundle-Activator: edt.metadata.favorites.Activator
 Bundle-ActivationPolicy: lazy
