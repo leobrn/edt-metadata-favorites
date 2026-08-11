@@ -104,6 +104,32 @@ public class FavoriteTreeModelTest
         assertEquals("товары", catalogNode.normalizedLabel);
     }
 
+    @Test
+    public void nestedFqnIsBuiltFromParentNodeWhenContainerIsNotSet()
+    {
+        CatalogAttribute detached = MdClassFactory.eINSTANCE.createCatalogAttribute();
+        detached.setUuid(UUID.randomUUID());
+        detached.setName("Артикул");
+        FavoriteTreeNode parent =
+            FavoriteTreeNode.object("Товары", new PinTarget("catalog", "Catalog.Товары"), null);
+
+        assertEquals("CatalogAttribute.Артикул", MetadataPinSupport.getFqn(detached));
+        assertEquals("Catalog.Товары.CatalogAttribute.Артикул",
+            FavoriteTreeModel.nestedFqn(parent, detached));
+    }
+
+    @Test
+    public void nestedObjectsKeepFullPathInFqn()
+    {
+        FavoriteTreeModel.BuildResult result = FavoriteTreeModel.build(configuration());
+
+        FavoriteTreeNode catalogNode = findChild(findRoot(result, "Справочники"), "Товары");
+        FavoriteTreeNode attribute = findChild(findChild(catalogNode, "Реквизиты"), "Артикул");
+
+        assertTrue(attribute.target.fqn().startsWith(catalogNode.target.fqn() + "."));
+        assertTrue(attribute.target.fqn().endsWith(".CatalogAttribute.Артикул"));
+    }
+
     private Configuration configuration()
     {
         MdClassFactory factory = MdClassFactory.eINSTANCE;

@@ -30,58 +30,6 @@ final class FavoriteTreeModel
     private static final ContainmentReachability CONTAINMENT_REACHABILITY =
         new ContainmentReachability();
 
-    private static final Map<String, String> GROUP_LABELS = Map.ofEntries(
-        Map.entry("Catalog", "Справочники"),
-        Map.entry("Document", "Документы"),
-        Map.entry("Enum", "Перечисления"),
-        Map.entry("Report", "Отчёты"),
-        Map.entry("DataProcessor", "Обработки"),
-        Map.entry("CommonModule", "Общие модули"),
-        Map.entry("Role", "Роли"),
-        Map.entry("Constant", "Константы"),
-        Map.entry("Language", "Языки"),
-        Map.entry("StyleItem", "Элементы стиля"),
-        Map.entry("Style", "Стили"),
-        Map.entry("PaletteColor", "Цвета палитры"),
-        Map.entry("Interface", "Интерфейсы"),
-        Map.entry("CommonPicture", "Общие картинки"),
-        Map.entry("CommonTemplate", "Общие макеты"),
-        Map.entry("CommonAttribute", "Общие реквизиты"),
-        Map.entry("XDTOPackage", "XDTO-пакеты"),
-        Map.entry("WSReference", "WS-ссылки"),
-        Map.entry("WebSocketClient", "WebSocket-клиенты"),
-        Map.entry("EventSubscription", "Подписки на события"),
-        Map.entry("ScheduledJob", "Регламентные задания"),
-        Map.entry("Bot", "Боты"),
-        Map.entry("SettingsStorage", "Хранилища настроек"),
-        Map.entry("FunctionalOptionsParameter", "Параметры функциональных опций"),
-        Map.entry("DefinedType", "Определяемые типы"),
-        Map.entry("CommandGroup", "Группы команд"),
-        Map.entry("FilterCriterion", "Критерии отбора"),
-        Map.entry("IntegrationService", "Сервисы интеграции"),
-        Map.entry("InformationRegister", "Регистры сведений"),
-        Map.entry("AccumulationRegister", "Регистры накопления"),
-        Map.entry("AccountingRegister", "Регистры бухгалтерии"),
-        Map.entry("CalculationRegister", "Регистры расчёта"),
-        Map.entry("ChartOfCharacteristicTypes", "Планы видов характеристик"),
-        Map.entry("ChartOfAccounts", "Планы счетов"),
-        Map.entry("ChartOfCalculationTypes", "Планы видов расчёта"),
-        Map.entry("DocumentNumerator", "Нумераторы документов"),
-        Map.entry("DocumentJournal", "Журналы документов"),
-        Map.entry("Sequence", "Последовательности"),
-        Map.entry("ExternalDataSource", "Внешние источники данных"),
-        Map.entry("ExchangePlan", "Планы обмена"),
-        Map.entry("BusinessProcess", "Бизнес-процессы"),
-        Map.entry("Task", "Задачи"),
-        Map.entry("CommonForm", "Общие формы"),
-        Map.entry("CommonCommand", "Общие команды"),
-        Map.entry("SessionParameter", "Параметры сеанса"),
-        Map.entry("FunctionalOption", "Функциональные опции"),
-        Map.entry("WebService", "Web-сервисы"),
-        Map.entry("HTTPService", "HTTP-сервисы"),
-        Map.entry("Subsystem", "Подсистемы"));
-
-
     private static final Map<String, String> NESTED_GROUP_LABELS = Map.ofEntries(
         Map.entry("attributes", "Реквизиты"),
         Map.entry("tabularSections", "Табличные части"),
@@ -168,7 +116,7 @@ final class FavoriteTreeModel
         {
             String uuid = MetadataPinSupport.getUuid(mdObject);
             String kind = mdObject.eClass().getName();
-            String groupLabel = GROUP_LABELS.getOrDefault(kind, kind);
+            String groupLabel = MetadataTypeNames.groupLabel(kind);
             FavoriteTreeNode group;
             if (COMMON_KINDS.contains(kind))
             {
@@ -268,7 +216,7 @@ final class FavoriteTreeModel
                     return value;
                 });
 
-            String fqn = MetadataPinSupport.getFqn(mdObject);
+            String fqn = nestedFqn(parentNode, mdObject);
             String label = mdObject.getName() != null ? mdObject.getName() : fqn;
             FavoriteTreeNode childNode = FavoriteTreeNode.object(label, new PinTarget(uuid, fqn), mdObject);
             nestedGroup.addChild(childNode);
@@ -278,6 +226,13 @@ final class FavoriteTreeModel
         {
             appendContainedObjects(child, parentNode, groupKey, groups, visited, reachability);
         }
+    }
+
+    static String nestedFqn(FavoriteTreeNode parentNode, MdObject mdObject)
+    {
+        String ownFqn = mdObject.eClass().getName() + "." + mdObject.getName();
+        String parentFqn = parentNode.target == null ? null : parentNode.target.fqn();
+        return parentFqn == null || parentFqn.isEmpty() ? ownFqn : parentFqn + "." + ownFqn;
     }
 
     private static EObject resolve(EObject object, EObject context)

@@ -24,6 +24,7 @@ import org.eclipse.jface.dialogs.MessageDialog;
 import org.eclipse.jface.viewers.ILabelProvider;
 import org.eclipse.jface.viewers.ITreeContentProvider;
 import org.eclipse.jface.viewers.LabelProvider;
+import org.eclipse.jface.viewers.StructuredSelection;
 import org.eclipse.jface.viewers.StyledCellLabelProvider;
 import org.eclipse.jface.viewers.TreeViewer;
 import org.eclipse.jface.viewers.TreeViewerColumn;
@@ -265,6 +266,7 @@ public class FavoritesManagementDialog extends Dialog
         {
             visibilityFilter.clearSearch();
             setSearchHighlighting(false);
+            FavoriteTreeNode selectedNode = selectedNode();
             treeViewer.getControl().setRedraw(false);
             try
             {
@@ -277,6 +279,7 @@ public class FavoritesManagementDialog extends Dialog
                 {
                     treeViewer.setExpandedElements(NO_EXPANDED_ELEMENTS);
                 }
+                revealNode(selectedNode);
             }
             finally
             {
@@ -346,6 +349,25 @@ public class FavoritesManagementDialog extends Dialog
             treeViewer.getControl().setRedraw(true);
         }
         updateSearchUiState();
+    }
+
+    private FavoriteTreeNode selectedNode()
+    {
+        return treeViewer.getStructuredSelection().getFirstElement() instanceof FavoriteTreeNode node
+            ? node : null;
+    }
+
+    /**
+     * После сброса поиска дерево сворачивается, поэтому выделенный элемент теряется вместе с его
+     * TreeItem. Раскрывается только путь до него, чтобы не платить за раскрытие всего дерева.
+     */
+    private void revealNode(FavoriteTreeNode node)
+    {
+        if (node == null || !visibilityFilter.matchesSubtree(node))
+        {
+            return;
+        }
+        treeViewer.setSelection(new StructuredSelection(node), true);
     }
 
     private void cancelSearchJob()

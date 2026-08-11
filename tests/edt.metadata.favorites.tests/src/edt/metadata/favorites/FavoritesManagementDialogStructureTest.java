@@ -5,9 +5,11 @@ package edt.metadata.favorites;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
 import java.lang.reflect.Field;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -49,23 +51,92 @@ public class FavoritesManagementDialogStructureTest
         "Элементы стиля", "Стили", "Языки", "Интерфейсы");
 
     @Test
-    public void everyConfigurationTypeHasExplicitRussianLabel() throws Exception
+    public void everyConfigurationTypeHasExplicitRussianNames()
     {
-        Map<String, String> labels = modelField("GROUP_LABELS");
-        assertEquals(EDT_2026_1_CONFIGURATION_TYPES, labels.keySet());
+        Map<String, MetadataTypeNames.KindNames> names = MetadataTypeNames.kindNames();
+        assertEquals(EDT_2026_1_CONFIGURATION_TYPES, names.keySet());
+
+        Set<String> groupLabels = new HashSet<>();
+        Set<String> fqnNames = new HashSet<>();
+        names.forEach((kind, kindNames) -> {
+            assertFalse(kind, kindNames.groupLabel().isBlank());
+            assertFalse(kind, kindNames.fqnName().isBlank());
+            assertTrue(kind, groupLabels.add(kindNames.groupLabel()));
+            assertTrue(kind, fqnNames.add(kindNames.fqnName()));
+        });
+    }
+
+    @Test
+    public void navigatorGroupLabelComesFromTheSameNameTable()
+    {
+        assertEquals("Справочники", MetadataTypeNames.groupLabel("Catalog"));
+        assertEquals("Регистры сведений", MetadataTypeNames.groupLabel("InformationRegister"));
+        assertEquals("UnknownKind", MetadataTypeNames.groupLabel("UnknownKind"));
+    }
+
+    @Test
+    public void russianTypeNameIsTranslatedToClassName()
+    {
+        assertEquals("catalog", MetadataTypeNames.kindForTypeName("справочник"));
+        assertEquals("catalog", MetadataTypeNames.kindForTypeName("справочники"));
+        assertEquals("informationregister", MetadataTypeNames.kindForTypeName("регистрсведений"));
+        assertEquals("informationregister", MetadataTypeNames.kindForTypeName("регистры сведений"));
+        assertEquals("calculationregister", MetadataTypeNames.kindForTypeName("регистррасчета"));
+        assertEquals("report", MetadataTypeNames.kindForTypeName("отчёт"));
+        assertEquals("report", MetadataTypeNames.kindForTypeName("отчет"));
+    }
+
+    @Test
+    public void russianNestedTypeNameIsTranslatedToClassName()
+    {
+        assertEquals("form", MetadataTypeNames.kindForTypeName("форма"));
+        assertEquals("form", MetadataTypeNames.kindForTypeName("формы"));
+        assertEquals("attribute", MetadataTypeNames.kindForTypeName("реквизит"));
+        assertEquals("tabularsection", MetadataTypeNames.kindForTypeName("табличная часть"));
+        assertEquals("template", MetadataTypeNames.kindForTypeName("макет"));
+        assertEquals("enumvalue", MetadataTypeNames.kindForTypeName("значения"));
+        assertEquals("recalculation", MetadataTypeNames.kindForTypeName("перерасчет"));
+        assertTrue(MetadataTypeNames.isNestedTypeName("форма"));
+        assertFalse(MetadataTypeNames.isNestedTypeName("справочник"));
+        assertFalse(MetadataTypeNames.isNestedTypeName("контр"));
+    }
+
+    @Test
+    public void unknownSegmentIsNotTranslated()
+    {
+        assertNull(MetadataTypeNames.kindForTypeName(""));
+        assertNull(MetadataTypeNames.kindForTypeName("контр"));
+        assertNull(MetadataTypeNames.kindForTypeName("справочник.контр"));
+    }
+
+    @Test
+    public void englishTypeNameIsRecognizedAsWell()
+    {
+        assertEquals("catalog", MetadataTypeNames.kindForTypeName("catalog"));
+        assertEquals("form", MetadataTypeNames.kindForTypeName("form"));
+        assertFalse(MetadataTypeNames.isNestedTypeName("catalog"));
+        assertTrue(MetadataTypeNames.isNestedTypeName("form"));
+    }
+
+    @Test
+    public void searchQueryIsNotRewrittenForAppliedState()
+    {
+        assertFalse(FavoritesManagementDialog.searchViewUpdating(
+            "Справочник.Контр", "справочник.контр", true, false));
+        assertTrue(FavoritesManagementDialog.searchViewUpdating(
+            "Справочник.Контр", "catalog.контр", true, false));
     }
 
     @Test
     public void commonBranchContainsExpectedTypesInNavigatorOrder() throws Exception
     {
-        Map<String, String> labels = modelField("GROUP_LABELS");
         Set<String> commonTypes = modelField("COMMON_KINDS");
         List<String> commonOrder = modelField("COMMON_GROUP_ORDER");
 
         assertEquals(COMMON_TYPES, commonTypes);
         assertEquals(COMMON_LABEL_ORDER, commonOrder);
-        assertEquals(Set.copyOf(COMMON_LABEL_ORDER),
-            commonTypes.stream().map(labels::get).collect(java.util.stream.Collectors.toSet()));
+        assertEquals(Set.copyOf(COMMON_LABEL_ORDER), commonTypes.stream()
+            .map(MetadataTypeNames::groupLabel).collect(java.util.stream.Collectors.toSet()));
     }
 
     @Test
@@ -197,6 +268,48 @@ public class FavoritesManagementDialogStructureTest
         }
 
         assertTrue("Editor pin command must be in the last main toolbar group", found);
+    }
+
+    @Test
+    public void gitChangedFilterFollowsFavoriteFilterOnNavigatorToolbar() throws Exception
+    {
+        Element root = DocumentBuilderFactory.newInstance().newDocumentBuilder()
+            .parse(FavoritesManagementDialogStructureTest.class.getResourceAsStream("/plugin.xml"))
+            .getDocumentElement();
+        NodeList contributions = root.getElementsByTagName("menuContribution");
+
+        for (int i = 0; i < contributions.getLength(); i++)
+        {
+            Element contribution = (Element)contributions.item(i);
+            if (!"toolbar:com._1c.g5.v8.dt.ui2.navigator"
+                .equals(contribution.getAttribute("locationURI")))
+            {
+                continue;
+            }
+
+            NodeList commands = contribution.getElementsByTagName("command");
+            int favoriteIndex = commandIndex(commands, "edt.metadata.favorites.toggleFilter");
+            int gitIndex = commandIndex(commands, "edt.metadata.favorites.toggleGitChangedFilter");
+            assertTrue(favoriteIndex >= 0);
+            assertEquals(favoriteIndex + 1, gitIndex);
+            assertEquals("icons/git-changed.png",
+                ((Element)commands.item(gitIndex)).getAttribute("icon"));
+            return;
+        }
+
+        throw new AssertionError("Navigator toolbar contribution is missing");
+    }
+
+    private static int commandIndex(NodeList commands, String commandId)
+    {
+        for (int i = 0; i < commands.getLength(); i++)
+        {
+            if (commandId.equals(((Element)commands.item(i)).getAttribute("commandId")))
+            {
+                return i;
+            }
+        }
+        return -1;
     }
 
     @Test

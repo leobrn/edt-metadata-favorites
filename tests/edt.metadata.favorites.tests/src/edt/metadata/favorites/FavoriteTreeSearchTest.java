@@ -160,6 +160,184 @@ public class FavoriteTreeSearchTest
         assertEquals(root, child.parent);
     }
 
+    @Test
+    public void russianTypeNameFindsObjectsByAlternativeFqnPath()
+    {
+        FavoriteTreeNode root = FavoriteTreeNode.group("Справочники");
+        FavoriteTreeNode catalog = object("Контрагенты", "catalog", "Catalog.Контрагенты");
+        root.addChild(catalog);
+
+        FavoriteTreeSearch.Result result = FavoriteTreeSearch.compute(List.of(root),
+            "справочник.контр", false, Set.of(), () -> false);
+
+        assertEquals(Set.of(catalog), result.matchingObjectNodes());
+    }
+
+    @Test
+    public void objectNamedLikeMetadataTypeIsStillFoundByItsOwnPath()
+    {
+        FavoriteTreeNode root = FavoriteTreeNode.group("Справочники");
+        FavoriteTreeNode catalog = object("Справочник", "catalog", "Catalog.Справочник");
+        FavoriteTreeNode form =
+            object("Основная", "form", "Catalog.Справочник.Form.Основная");
+        FavoriteTreeNode otherForm =
+            object("Основная", "other", "Catalog.Контрагенты.Form.Основная");
+        root.addChild(catalog);
+        catalog.addChild(form);
+        root.addChild(otherForm);
+
+        FavoriteTreeSearch.Result result = FavoriteTreeSearch.compute(List.of(root),
+            "справочник.form", false, Set.of(), () -> false);
+
+        assertEquals(Set.of(form), result.matchingObjectNodes());
+    }
+
+    @Test
+    public void objectNameEndingWithTypeNameIsNotMatchedByTypePath()
+    {
+        FavoriteTreeNode common = FavoriteTreeNode.group("Общие");
+        FavoriteTreeNode services = FavoriteTreeNode.group("HTTP-сервисы");
+        FavoriteTreeNode service =
+            object("ExtensionCatalog", "service", "HTTPService.ExtensionCatalog");
+        FavoriteTreeNode templates = FavoriteTreeNode.group("urlTemplates");
+        FavoriteTreeNode template =
+            object("execute", "template", "HTTPService.ExtensionCatalog.URLTemplate.execute");
+        FavoriteTreeNode catalogs = FavoriteTreeNode.group("Справочники");
+        FavoriteTreeNode catalog = object("Валюты", "catalog", "Catalog.Валюты");
+        common.addChild(services);
+        services.addChild(service);
+        service.addChild(templates);
+        templates.addChild(template);
+        catalogs.addChild(catalog);
+
+        FavoriteTreeSearch.Result result = FavoriteTreeSearch.compute(List.of(common, catalogs),
+            "справочник.", false, Set.of(), () -> false);
+
+        assertEquals(Set.of(catalog), result.matchingObjectNodes());
+        assertFalse(result.visibleNodes().contains(service));
+        assertFalse(result.visibleNodes().contains(template));
+    }
+
+    @Test
+    public void russianNestedTypeNameFindsNestedObject()
+    {
+        FavoriteTreeNode root = FavoriteTreeNode.group("Справочники");
+        FavoriteTreeNode catalog = object("Валюты", "catalog", "Catalog.Валюты");
+        FavoriteTreeNode forms = FavoriteTreeNode.group("Формы");
+        FavoriteTreeNode form = object("ПараметрыПрописиВалюты_en", "form",
+            "Catalog.Валюты.Form.ПараметрыПрописиВалюты_en");
+        root.addChild(catalog);
+        catalog.addChild(forms);
+        forms.addChild(form);
+
+        assertEquals(Set.of(form), FavoriteTreeSearch
+            .compute(List.of(root), "форма.параметры", false, Set.of(), () -> false)
+            .matchingObjectNodes());
+        assertEquals(Set.of(form), FavoriteTreeSearch
+            .compute(List.of(root), "form.параметры", false, Set.of(), () -> false)
+            .matchingObjectNodes());
+        assertEquals(Set.of(form), FavoriteTreeSearch
+            .compute(List.of(root), "валюты.форма", false, Set.of(), () -> false)
+            .matchingObjectNodes());
+        assertEquals(Set.of(form), FavoriteTreeSearch
+            .compute(List.of(root), "алюты.form", false, Set.of(), () -> false)
+            .matchingObjectNodes());
+        assertEquals(Set.of(form), FavoriteTreeSearch
+            .compute(List.of(root), "справочник.валюты.форма", false, Set.of(), () -> false)
+            .matchingObjectNodes());
+    }
+
+    @Test
+    public void objectNameEqualToTypeNameIsNotTreatedAsType()
+    {
+        FavoriteTreeNode root = FavoriteTreeNode.group("Справочники");
+        FavoriteTreeNode catalog = object("Form", "catalog", "Catalog.Form");
+        FavoriteTreeNode attribute = object("Code", "attribute", "Catalog.Form.CatalogAttribute.Code");
+        FavoriteTreeNode form = object("Основная", "form", "Catalog.Form.CatalogForm.Основная");
+        root.addChild(catalog);
+        catalog.addChild(attribute);
+        catalog.addChild(form);
+
+        assertEquals(Set.of(form), FavoriteTreeSearch
+            .compute(List.of(root), "форма.", false, Set.of(), () -> false).matchingObjectNodes());
+        assertEquals(Set.of(attribute), FavoriteTreeSearch
+            .compute(List.of(root), "справочник.form.реквизит", false, Set.of(), () -> false)
+            .matchingObjectNodes());
+        assertEquals(Set.of(form), FavoriteTreeSearch
+            .compute(List.of(root), "справочник.form.форма", false, Set.of(), () -> false)
+            .matchingObjectNodes());
+    }
+
+    @Test
+    public void russianNestedTypeMatchesOwnerSpecificClassName()
+    {
+        FavoriteTreeNode root = FavoriteTreeNode.group("Справочники");
+        FavoriteTreeNode catalog = object("Валюты", "catalog", "Catalog.Валюты");
+        FavoriteTreeNode form =
+            object("ПараметрыПрописи", "form", "Catalog.Валюты.CatalogForm.ПараметрыПрописи");
+        FavoriteTreeNode attribute =
+            object("Код", "attribute", "Catalog.Валюты.CatalogAttribute.Код");
+        root.addChild(catalog);
+        catalog.addChild(form);
+        catalog.addChild(attribute);
+
+        assertEquals(Set.of(form), FavoriteTreeSearch
+            .compute(List.of(root), "валюты.форма", false, Set.of(), () -> false)
+            .matchingObjectNodes());
+        assertEquals(Set.of(attribute), FavoriteTreeSearch
+            .compute(List.of(root), "справочник.валюты.реквизит", false, Set.of(), () -> false)
+            .matchingObjectNodes());
+    }
+
+    @Test
+    public void nestedTypeNameIsNotMatchedByClassNameSuffixOfAnotherType()
+    {
+        FavoriteTreeNode common = FavoriteTreeNode.group("Общие");
+        FavoriteTreeNode commonTemplates = FavoriteTreeNode.group("Общие макеты");
+        FavoriteTreeNode commonTemplate = object("demo", "commonTemplate", "CommonTemplate.demo");
+        FavoriteTreeNode services = FavoriteTreeNode.group("HTTP-сервисы");
+        FavoriteTreeNode service = object("Биллинг", "service", "HTTPService.Биллинг");
+        FavoriteTreeNode urlTemplates = FavoriteTreeNode.group("urlTemplates");
+        FavoriteTreeNode urlTemplate =
+            object("Версия", "urlTemplate", "HTTPService.Биллинг.HTTPServiceURLTemplate.Версия");
+        FavoriteTreeNode catalogs = FavoriteTreeNode.group("Справочники");
+        FavoriteTreeNode catalog = object("СтраныМира", "catalog", "Catalog.СтраныМира");
+        FavoriteTreeNode template = object("Классификатор", "template",
+            "Catalog.СтраныМира.CatalogTemplate.Классификатор");
+        common.addChild(commonTemplates);
+        commonTemplates.addChild(commonTemplate);
+        common.addChild(services);
+        services.addChild(service);
+        service.addChild(urlTemplates);
+        urlTemplates.addChild(urlTemplate);
+        catalogs.addChild(catalog);
+        catalog.addChild(template);
+
+        assertEquals(Set.of(commonTemplate, template), FavoriteTreeSearch
+            .compute(List.of(common, catalogs), "макет.", false, Set.of(), () -> false)
+            .matchingObjectNodes());
+        assertEquals(Set.of(urlTemplate), FavoriteTreeSearch
+            .compute(List.of(common, catalogs), "шаблонurl.", false, Set.of(), () -> false)
+            .matchingObjectNodes());
+    }
+
+    @Test
+    public void patternSegmentMustCoverWholeFqnSegmentInTheMiddle()
+    {
+        FavoriteTreeNode root = FavoriteTreeNode.group("Справочники");
+        FavoriteTreeNode catalog = object("Валюты", "catalog", "Catalog.Валюты");
+        FavoriteTreeNode form = object("Основная", "form", "Catalog.Валюты.Form.Основная");
+        root.addChild(catalog);
+        catalog.addChild(form);
+
+        assertEquals(Set.of(), FavoriteTreeSearch
+            .compute(List.of(root), "валют.form", false, Set.of(), () -> false)
+            .matchingObjectNodes());
+        assertEquals(Set.of(form), FavoriteTreeSearch
+            .compute(List.of(root), "валюты.form", false, Set.of(), () -> false)
+            .matchingObjectNodes());
+    }
+
     private static FavoriteTreeNode object(String label, String uuid)
     {
         return FavoriteTreeNode.object(label, new PinTarget(uuid, label), null);

@@ -5,7 +5,7 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
-$repoRoot = $PSScriptRoot
+$repoRoot = Split-Path -Parent $PSScriptRoot
 $appPom = Join-Path $repoRoot 'app\pom.xml'
 $changelog = Join-Path $repoRoot 'docs\CHANGELOG.md'
 $bundleTarget = Join-Path $repoRoot 'app\bundles\edt.metadata.favorites\target'
@@ -17,7 +17,12 @@ $versionNode = $pom.SelectSingleNode(
     "/*[local-name()='project']/*[local-name()='version']")
 if ($null -eq $versionNode)
 {
-    throw "Не удалось определить версию проекта из $appPom."
+    $versionNode = $pom.SelectSingleNode(
+        "/*[local-name()='project']/*[local-name()='parent']/*[local-name()='version']")
+}
+if ($null -eq $versionNode)
+{
+    throw "Не удалось определить собственную или унаследованную версию проекта из $appPom."
 }
 
 $version = $versionNode.InnerText.Trim()
@@ -25,7 +30,8 @@ if ($version -notmatch '^[0-9A-Za-z][0-9A-Za-z._-]*$')
 {
     throw "Версия '$version' не может использоваться в имени каталога release."
 }
-if ($version.EndsWith('-SNAPSHOT', [StringComparison]::OrdinalIgnoreCase))
+$isSnapshot = $version.EndsWith('-SNAPSHOT', [StringComparison]::OrdinalIgnoreCase)
+if ($isSnapshot)
 {
     Write-Warning "Собирается SNAPSHOT-версия $version. Перед публикацией GitHub Release задайте release-версию."
 }
@@ -52,10 +58,8 @@ if (-not $SkipBuild)
     }
 }
 
-$bundleJar = Get-ChildItem -LiteralPath $bundleTarget -Filter 'edt.metadata.favorites-*.jar' -File |
-    Where-Object { $_.Name -notmatch '-(sources|javadoc)\.jar$' } |
-    Sort-Object LastWriteTimeUtc -Descending |
-    Select-Object -First 1
+$bundleJarPath = Join-Path $bundleTarget "edt.metadata.favorites-$version.jar"
+$bundleJar = Get-Item -LiteralPath $bundleJarPath -ErrorAction SilentlyContinue
 $repositoryZip = Get-ChildItem -LiteralPath $repositoryTarget -Filter '*.zip' -File |
     Sort-Object LastWriteTimeUtc -Descending |
     Select-Object -First 1
@@ -67,6 +71,51 @@ if ($null -eq $bundleJar)
 if ($null -eq $repositoryZip)
 {
     throw "Не найден update-site ZIP в $repositoryTarget."
+}
+
+Add-Type -AssemblyName System.IO.Compression.FileSystem
+$bundleArchive = [IO.Compression.ZipFile]::OpenRead($bundleJar.FullName)
+try
+{
+    $manifestEntry = $bundleArchive.GetEntry('META-INF/MANIFEST.MF')
+    if ($null -eq $manifestEntry)
+    {
+        throw "Bundle JAR не содержит META-INF/MANIFEST.MF: $($bundleJar.FullName)."
+    }
+    $manifestReader = [IO.StreamReader]::new($manifestEntry.Open())
+    try
+    {
+        $manifest = $manifestReader.ReadToEnd()
+    }
+    finally
+    {
+        $manifestReader.Dispose()
+    }
+}
+finally
+{
+    $bundleArchive.Dispose()
+}
+$bundleVersionMatch = [Regex]::Match($manifest, '(?m)^Bundle-Version:\s*([^\r\n]+)')
+if (-not $bundleVersionMatch.Success)
+{
+    throw "Bundle JAR не содержит Bundle-Version: $($bundleJar.FullName)."
+}
+$bundleVersion = $bundleVersionMatch.Groups[1].Value.Trim()
+$expectedPluginEntry = "plugins/edt.metadata.favorites_${bundleVersion}.jar"
+
+$archive = [IO.Compression.ZipFile]::OpenRead($repositoryZip.FullName)
+try
+{
+    $matchingPlugin = $archive.GetEntry($expectedPluginEntry)
+}
+finally
+{
+    $archive.Dispose()
+}
+if ($null -eq $matchingPlugin)
+{
+    throw "Update-site ZIP не содержит ${expectedPluginEntry}: $($repositoryZip.FullName)."
 }
 
 $releaseDir = [IO.Path]::GetFullPath((Join-Path $buildRoot $version))
@@ -114,7 +163,12 @@ if ($changesStart -lt 0)
         }
     }
 }
-if ($changesStart -lt 0)
+if ($changesStart -lt 0 -and $isSnapshot)
+{
+    $changesStart = $changelogLines.Count
+    $changesSection = 'SNAPSHOT'
+}
+elseif ($changesStart -lt 0)
 {
     throw "В $changelog не найдены секции '## [Unreleased]' и '$versionHeading'."
 }
@@ -138,7 +192,14 @@ while ($changes.Count -gt 0 -and [string]::IsNullOrWhiteSpace($changes[$changes.
 }
 if ($changes.Count -eq 0)
 {
-    throw "Секция $changesSection в $changelog пуста."
+    if ($isSnapshot)
+    {
+        $changes.Add('Тестовая SNAPSHOT-сборка текущего состояния ветки.')
+    }
+    else
+    {
+        throw "Секция $changesSection в $changelog пуста."
+    }
 }
 
 $releaseNotes = @(

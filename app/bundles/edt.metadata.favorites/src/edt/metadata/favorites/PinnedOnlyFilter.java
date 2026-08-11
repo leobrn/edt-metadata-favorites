@@ -51,35 +51,14 @@ public class PinnedOnlyFilter extends ViewerFilter
         syncRevision();
 
         String projectName = MetadataPinSupport.getProjectName(element);
-        if (MetadataPinSupport.isProjectNode(element))
+        if (isPinnedElementCurrentRevision(element, projectName))
         {
-            if (projectName != null && favorites.isProjectPinned(projectName))
-            {
-                return true;
-            }
-            if (projectName != null && !hasPinnedObjects(projectName))
-            {
-                return false;
-            }
+            return true;
         }
-        else
-        {
-            if (projectName != null && favorites.isProjectPinned(projectName)
-                && !hasPinnedObjects(projectName))
-            {
-                return true;
-            }
-            if (projectName != null && !hasPinnedObjects(projectName))
-            {
-                return false;
-            }
 
-            String uuid = MetadataPinSupport.getUuid(element);
-            if (uuid != null && projectName != null
-                && favorites.isObjectEffectivelyPinned(projectName, MetadataPinSupport.getUuidPath(element)))
-            {
-                return true;
-            }
+        if (projectName != null && !hasPinnedObjects(projectName))
+        {
+            return false;
         }
 
         if (viewer instanceof AbstractTreeViewer treeViewer)
@@ -88,6 +67,34 @@ public class PinnedOnlyFilter extends ViewerFilter
         }
 
         return false;
+    }
+
+    boolean isPinnedElement(Object element)
+    {
+        syncRevision();
+        String projectName = MetadataPinSupport.getProjectName(element);
+        return isPinnedElementCurrentRevision(element, projectName);
+    }
+
+    private boolean isPinnedElementCurrentRevision(Object element, String projectName)
+    {
+        if (MetadataPinSupport.isProjectNode(element))
+        {
+            return projectName != null && favorites.isProjectPinned(projectName);
+        }
+        if (projectName == null)
+        {
+            return false;
+        }
+        if (favorites.isProjectPinned(projectName) && !hasPinnedObjects(projectName))
+        {
+            return true;
+        }
+
+        String uuid = MetadataPinSupport.getUuid(element);
+        return uuid != null
+            && favorites.isObjectEffectivelyPinned(
+                projectName, MetadataPinSupport.getUuidPath(element));
     }
 
 

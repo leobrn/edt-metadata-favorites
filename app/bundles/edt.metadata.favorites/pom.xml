@@ -6,9 +6,9 @@
   <parent>
     <groupId>edt.metadata.favorites</groupId>
     <artifactId>bundles</artifactId>
-    <version>1.2.0</version>
+    <version>1.3.0</version>
   </parent>
   <artifactId>edt.metadata.favorites</artifactId>
-  <version>1.2.0</version>
+  <version>1.3.0</version>
   <packaging>eclipse-plugin</packaging>
 </project>

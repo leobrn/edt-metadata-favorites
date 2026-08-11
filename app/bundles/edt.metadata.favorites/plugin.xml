@@ -28,12 +28,20 @@
             description="%filter.description"
             activeByDefault="false">
       </commonFilter>
+      <commonFilter
+            class="edt.metadata.favorites.GitChangedOnlyFilter"
+            id="edt.metadata.favorites.gitChangedFilter"
+            name="%gitChangedFilter.name"
+            description="%gitChangedFilter.description"
+            activeByDefault="false">
+      </commonFilter>
    </extension>
 
    <extension point="org.eclipse.ui.navigator.viewer">
       <viewerContentBinding viewerId="com._1c.g5.v8.dt.ui2.navigator">
          <includes>
             <contentExtension pattern="edt.metadata.favorites.filter"/>
+            <contentExtension pattern="edt.metadata.favorites.gitChangedFilter"/>
          </includes>
       </viewerContentBinding>
    </extension>
@@ -49,6 +57,12 @@
             categoryId="edt.metadata.favorites.category"
             name="%toggleFilter.name"
             description="%toggleFilter.description">
+      </command>
+      <command
+            id="edt.metadata.favorites.toggleGitChangedFilter"
+            categoryId="edt.metadata.favorites.category"
+            name="%toggleGitChangedFilter.name"
+            description="%toggleGitChangedFilter.description">
       </command>
       <command
             id="edt.metadata.favorites.togglePin"
@@ -76,6 +90,15 @@
             class="edt.metadata.favorites.ToggleFilterHandler"
             commandId="edt.metadata.favorites.toggleFilter">
 
+         <activeWhen>
+            <with variable="activePartId">
+               <equals value="com._1c.g5.v8.dt.ui2.navigator"/>
+            </with>
+         </activeWhen>
+      </handler>
+      <handler
+            class="edt.metadata.favorites.ToggleGitChangedFilterHandler"
+            commandId="edt.metadata.favorites.toggleGitChangedFilter">
          <activeWhen>
             <with variable="activePartId">
                <equals value="com._1c.g5.v8.dt.ui2.navigator"/>
@@ -150,6 +173,12 @@
                commandId="edt.metadata.favorites.toggleFilter"
                tooltip="%toggleFilter.tooltip"
                icon="icons/lock.png"
+               style="toggle">
+         </command>
+         <command
+               commandId="edt.metadata.favorites.toggleGitChangedFilter"
+               tooltip="%toggleGitChangedFilter.tooltip"
+               icon="icons/git-changed.png"
                style="toggle">
          </command>
       </menuContribution>

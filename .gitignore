@@ -8,3 +8,5 @@
 .settings/
 *.iml
 *.log
+AGENTS.md
+CLAUDE.md

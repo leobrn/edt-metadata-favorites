@@ -23,16 +23,27 @@ public class Activator
 
     private PinStore pinStore;
 
+    private GitChangeCache gitChangeCache;
+
+    private boolean stopped;
+
     @Override
-    public void start(BundleContext context) throws Exception
+    public synchronized void start(BundleContext context) throws Exception
     {
         super.start(context);
+        stopped = false;
         plugin = this;
     }
 
     @Override
-    public void stop(BundleContext context) throws Exception
+    public synchronized void stop(BundleContext context) throws Exception
     {
+        stopped = true;
+        if (gitChangeCache != null)
+        {
+            gitChangeCache.dispose();
+            gitChangeCache = null;
+        }
         plugin = null;
         super.stop(context);
     }
@@ -53,6 +64,19 @@ public class Activator
         return pinStore;
     }
 
+    synchronized GitChangeCache getGitChangeCache()
+    {
+        if (stopped)
+        {
+            throw new IllegalStateException("Plugin is stopped");
+        }
+        if (gitChangeCache == null)
+        {
+            gitChangeCache = new GitChangeCache();
+        }
+        return gitChangeCache;
+    }
+
     private static Set<String> currentWorkspaceProjectNames()
     {
         Set<String> names = new HashSet<>();
@@ -65,6 +89,10 @@ public class Activator
 
     public static void logError(String message, Throwable throwable)
     {
-        getDefault().getLog().log(new Status(IStatus.ERROR, PLUGIN_ID, message, throwable));
+        Activator current = getDefault();
+        if (current != null)
+        {
+            current.getLog().log(new Status(IStatus.ERROR, PLUGIN_ID, message, throwable));
+        }
     }
 }

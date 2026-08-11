@@ -26,11 +26,23 @@ public final class MetadataPinSupport
     }
 
 
+    public static boolean isConfigurationRoot(Object element)
+    {
+        return element instanceof Configuration;
+    }
+
+
     public static String getProjectName(Object element)
+    {
+        IProject project = getProject(element);
+        return project == null ? null : project.getName();
+    }
+
+    public static IProject getProject(Object element)
     {
         if (element instanceof IProject project)
         {
-            return project.getName();
+            return project;
         }
 
         if (element instanceof EObject eObject)
@@ -38,8 +50,7 @@ public final class MetadataPinSupport
             try
             {
                 IResourceLookup resourceLookup = ServiceAccess.get(IResourceLookup.class);
-                IProject project = resourceLookup.getProject(eObject);
-                return project == null ? null : project.getName();
+                return resourceLookup.getProject(eObject);
             }
             catch (RuntimeException e)
             {
@@ -48,6 +59,12 @@ public final class MetadataPinSupport
         }
 
         return null;
+    }
+
+
+    public static String getObjectName(Object element)
+    {
+        return element instanceof MdObject mdObject ? mdObject.getName() : null;
     }
 
 
